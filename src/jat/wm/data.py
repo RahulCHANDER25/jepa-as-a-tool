@@ -8,6 +8,7 @@ Episodes all have the same length, so plain dense arrays are enough.
 """
 
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import nullcontext
 from dataclasses import dataclass, fields
 from pathlib import Path
 
@@ -82,11 +83,13 @@ def generate(
     """Episodes of `n_steps` random pushes. Aimed pushes hit the T; uniform ones mostly miss,
     which teaches the model that a missed push changes nothing."""
     jobs = [(seed, i, n_steps, aimed_share) for i in range(n_episodes)]
-    if workers > 1:
-        with ProcessPoolExecutor(workers) as pool:
-            episodes = list(pool.map(_episode, jobs, chunksize=16))
-    else:
-        episodes = [_episode(job) for job in jobs]
+    with ProcessPoolExecutor(workers) if workers > 1 else nullcontext() as pool:
+        results = pool.map(_episode, jobs, chunksize=16) if pool else map(_episode, jobs)
+        episodes = []
+        for i, episode in enumerate(results, 1):
+            episodes.append(episode)
+            if i % max(1, n_episodes // 10) == 0:
+                print(f"generated {i}/{n_episodes} episodes", flush=True)
     poses, pushes, moved, jammed = (np.stack(a) for a in zip(*episodes, strict=True))
     split = np.random.default_rng([_STREAM, seed]).choice(
         [TRAIN, VAL, TEST], size=n_episodes, p=[1 - val_share - test_share, val_share, test_share]

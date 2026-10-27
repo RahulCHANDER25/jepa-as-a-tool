@@ -1,5 +1,7 @@
 """A dataset folder (rollouts + latents) as torch tensors, ready for training and evaluation."""
 
+import math
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -10,12 +12,31 @@ from jat.wm.data import Rollouts
 from jat.wm.encoder import load_latents
 
 
+def available_ram() -> float:
+    """Free RAM plus reclaimable cache, in bytes (Linux MemAvailable); inf if unknown."""
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except OSError:
+        pass
+    return math.inf
+
+
 class LatentData:
     def __init__(self, folder: Path, device: torch.device):
         self.rollouts = Rollouts.load(folder)
         latents, self.meta = load_latents(folder)
         self.device = device
-        z = torch.from_numpy(np.array(latents))  # fp16; a copy reads the memmap into RAM
+        # In RAM when it fits; otherwise each batch reads the file (slower, still works).
+        self.in_ram = latents.nbytes < 0.7 * available_ram()
+        if self.in_ram:
+            latents = np.array(latents)
+        with warnings.catch_warnings():
+            # A memmap is read-only; torch warns about writes we never do.
+            warnings.simplefilter("ignore", UserWarning)
+            z = torch.from_numpy(latents)  # fp16
         # On the GPU when it fits with room to spare: no host-to-device copy per batch.
         if device.type == "cuda" and z.nbytes < 0.5 * torch.cuda.mem_get_info(device)[0]:
             z = z.to(device)

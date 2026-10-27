@@ -21,7 +21,7 @@ fmt:
     uv run ruff check --fix .
     uv run ruff format .
 
-# World-model pipeline. On a GPU box, notebooks/kaggle.ipynb runs the same steps.
+# World-model pipeline. On a GPU machine, notebooks/train_wm_v*.ipynb run the same steps.
 
 # Generate random-push episodes
 gen data="data/random-4k" *args="":

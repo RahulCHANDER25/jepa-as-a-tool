@@ -24,3 +24,13 @@ def test_predictor_training_writes_a_checkpoint_and_a_horizon_table(fake_dataset
     assert len(saved["history"]) == 2 and (fake_dataset / "predictor.pt").exists()
     first = saved["history"][0]
     assert first["latent"] != first["keypoint"]  # each loss is logged on its own
+
+
+def test_latents_too_big_for_ram_are_read_from_disk(fake_dataset, monkeypatch):
+    monkeypatch.setattr("jat.wm.dataset.available_ram", lambda: 0)
+    on_disk, in_ram = LatentData(fake_dataset, CPU), None
+    monkeypatch.undo()
+    in_ram = LatentData(fake_dataset, CPU)
+    assert not on_disk.in_ram and in_ram.in_ram
+    e, t = torch.tensor([0, 5]), torch.tensor([1, 3])
+    torch.testing.assert_close(on_disk.latent(e, t), in_ram.latent(e, t))
