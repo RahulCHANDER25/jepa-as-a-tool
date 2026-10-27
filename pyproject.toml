@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "An LLM agent that queries a V-JEPA 2 world model before acting."
 readme = "README.md"
 license = "MIT"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.11,<3.14"
 dependencies = [
     "gym-pusht>=0.1.8",
     "langchain-core>=1.7.0",
@@ -14,6 +14,8 @@ dependencies = [
     "pydantic>=2.14.1",
     "python-dotenv>=1.2.4",
     "shapely>=2.2.0",
+    "torch>=2.5",
+    "transformers>=4.53",
     "typer>=0.12",
 ]
 
@@ -30,12 +32,22 @@ dev = [
 requires = ["uv_build>=0.9.0,<0.10"]
 build-backend = "uv_build"
 
+# CPU wheels for local runs and CI (no local GPU). Kaggle/Colab keep their own CUDA torch:
+# pip ignores this table.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv.build-backend]
 module-name = "jat"
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

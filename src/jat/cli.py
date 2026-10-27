@@ -39,21 +39,113 @@ def tasks(
 
 
 @app.command()
-def gen() -> None:
-    """Generate random-push rollouts in PushT."""
-    _not_ready("M3")
+def gen(
+    out: Annotated[Path, typer.Argument(help="Dataset folder, e.g. data/random-4k.")],
+    episodes: int = 4000,
+    steps: int = 6,
+    seed: int = 0,
+    workers: int = 4,
+) -> None:
+    """Generate random-push episodes in PushT (CPU)."""
+    from jat.wm.data import generate
+
+    rollouts = generate(episodes, steps, seed, workers=workers)
+    rollouts.save(out)
+    typer.echo(
+        f"{episodes} episodes x {steps} pushes -> {out / 'rollouts.npz'}  "
+        f"(T moved in {rollouts.moved.mean():.0%} of pushes, jammed in {rollouts.jammed.mean():.1%})"
+    )
 
 
 @app.command()
-def encode() -> None:
-    """Encode rendered frames with V-JEPA 2 (Modal GPU)."""
-    _not_ready("M3")
+def encode(
+    data: Annotated[Path, typer.Argument(help="Dataset folder written by `jat gen`.")],
+    pool: int = typer.Option(
+        2, help="Average 2x2 patches: 64 tokens instead of 256, 4x less disk."
+    ),
+    batch: int = 64,
+) -> None:
+    """Render every pose and encode it with V-JEPA 2 (GPU recommended)."""
+    from jat.wm.encoder import Encoder, encode_dataset
+
+    encoder = Encoder(pool=pool)
+    typer.echo(f"V-JEPA 2 on {encoder.device}: {encoder.n_tokens} tokens x {encoder.dim} per frame")
+    encode_dataset(data, encoder, batch)
 
 
-@app.command()
-def train() -> None:
-    """Train the translator or the predictor (Modal GPU)."""
-    _not_ready("M4")
+train_app = typer.Typer(no_args_is_help=True, help="Train the translator, then the predictor.")
+app.add_typer(train_app, name="train")
+
+
+@train_app.command("translator")
+def train_translator(
+    data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
+    out: Annotated[Path, typer.Option(help="Run folder, e.g. runs/wm.")],
+    steps: int = 5000,
+    batch: int = 256,
+    lr: float = 1e-3,
+) -> None:
+    """Latent -> pose. Its test error says whether V-JEPA 2 latents show where the T is."""
+    from jat.wm import train
+    from jat.wm.dataset import LatentData
+    from jat.wm.encoder import default_device
+
+    result = train.train_translator(LatentData(data, default_device()), out, steps, batch, lr)
+    test = result["test"]
+    typer.echo(
+        f"\nTranslator on test frames: median {test['px_median']:.1f} px, {test['deg_median']:.1f}°"
+        f" (90% under {test['px_p90']:.1f} px, {test['deg_p90']:.1f}°)"
+    )
+
+
+@train_app.command("predictor")
+def train_predictor(
+    data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
+    out: Annotated[Path, typer.Option(help="Run folder holding translator.pt.")],
+    steps: int = 20000,
+    batch: int = 64,
+    rollout: int = typer.Option(3, help="Pushes chained per training sample."),
+    lr: float = 3e-4,
+    keypoint_weight: float = 1.0,
+    idm_weight: float = 0.1,
+) -> None:
+    """(latent, push) -> next latent, trained over chains of pushes."""
+    from jat.wm import train
+    from jat.wm.dataset import LatentData
+    from jat.wm.encoder import default_device
+
+    train.train_predictor(
+        LatentData(data, default_device()),
+        out,
+        steps=steps,
+        batch=batch,
+        rollout=rollout,
+        lr=lr,
+        keypoint_weight=keypoint_weight,
+        idm_weight=idm_weight,
+    )
+
+
+@app.command(name="wm-eval")
+def wm_eval(
+    data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
+    wm: Annotated[Path, typer.Option(help="Run folder with translator.pt and predictor.pt.")],
+    split: str = "test",
+) -> None:
+    """Imagined pose vs true pose after 0, 1, 2, ... pushes. No LLM."""
+    from jat.wm.data import TEST, VAL
+    from jat.wm.dataset import LatentData
+    from jat.wm.encoder import default_device
+    from jat.wm.evaluate import format_rows, rollout_errors
+    from jat.wm.models import Predictor, Translator, load_module
+
+    device = default_device()
+    translator, _ = load_module(Translator, wm / "translator.pt", device)
+    predictor, _ = load_module(Predictor, wm / "predictor.pt", device)
+    rows = rollout_errors(
+        LatentData(data, device), predictor, translator, {"val": VAL, "test": TEST}[split]
+    )
+    typer.echo(format_rows(rows))
 
 
 @app.command(name="eval")
@@ -63,6 +155,9 @@ def eval_(
     n: int = 30,
     task_seed: int = 0,
     settings: str = "no_tool,oracle_tool,random",
+    wm: Annotated[
+        Path | None, typer.Option(help="World model run folder; needed for wm_tool.")
+    ] = None,
     seeds: int = 1,
     provider: str = "meta",
     temperature: float = 0.7,
@@ -78,6 +173,13 @@ def eval_(
 
     task_list = [t for f in _csv(families) for t in sample_tasks(f, n, task_seed)]
     setting_list = _csv(settings)
+    world_model = None
+    if "wm_tool" in setting_list:
+        if wm is None:
+            raise typer.BadParameter("wm_tool needs --wm <run folder>")
+        from jat.wm.models import WorldModel
+
+        world_model = WorldModel.load(wm)
 
     def model_factory():
         model = chat_model(provider, temperature)
@@ -98,6 +200,7 @@ def eval_(
         model_factory if needs_llm else None,
         out,
         workers,
+        world_model,
     )
     typer.echo("\n" + format_table(summarize(logs)))
     if failures:
@@ -117,4 +220,4 @@ def report(run: Annotated[Path, typer.Argument(help="Run folder written by `jat 
 @app.command(name="export-web")
 def export_web() -> None:
     """Copy results and episode logs into the website data folder."""
-    _not_ready("M7")
+    _not_ready("the website step")

@@ -16,10 +16,11 @@ from jat.agent.episode_log import AgentInfo, EpisodeLog, frame_logs
 from jat.agent.loop import run_episode
 from jat.env.pusht import random_aimed_push
 from jat.env.tasks import Task, check
-from jat.tool.backends import OracleBackend
+from jat.tool.backends import OracleBackend, WorldModelBackend
 from jat.tool.session import Session
+from jat.wm.models import WorldModel
 
-SETTINGS = ("no_tool", "oracle_tool", "random")
+SETTINGS = ("no_tool", "wm_tool", "oracle_tool", "random")
 ModelFactory = Callable[[], tuple[object, AgentInfo]]
 
 
@@ -50,16 +51,26 @@ def run_random(task: Task, seed: int) -> EpisodeLog:
     )
 
 
-def run_one(task: Task, setting: str, seed: int, model_factory: ModelFactory | None) -> EpisodeLog:
+def run_one(
+    task: Task,
+    setting: str,
+    seed: int,
+    model_factory: ModelFactory | None,
+    world_model: WorldModel | None = None,
+) -> EpisodeLog:
     if setting == "random":
         return run_random(task, seed)
-    if setting not in ("no_tool", "oracle_tool"):
+    if setting not in SETTINGS:
         raise ValueError(f"unknown setting {setting!r}; expected one of {SETTINGS}")
+    if setting == "wm_tool":
+        if world_model is None:
+            raise ValueError("wm_tool needs a trained world model")
+        backend = WorldModelBackend(world_model)
+    else:
+        # no_tool also uses the oracle backend: only to read the current frame, never to imagine.
+        backend = OracleBackend()
     model, agent = model_factory()
-    # no_tool also uses the oracle backend: only to read the current frame, never to imagine.
-    return run_episode(
-        task, setting, OracleBackend(), model, agent, episode_id(task, setting, seed)
-    )
+    return run_episode(task, setting, backend, model, agent, episode_id(task, setting, seed))
 
 
 def run_grid(
@@ -69,8 +80,10 @@ def run_grid(
     model_factory: ModelFactory | None,
     out_dir: Path,
     workers: int = 8,
+    world_model: WorldModel | None = None,
 ) -> tuple[list[EpisodeLog], int]:
-    """Returns (all logs on disk for this grid, number of failed episodes)."""
+    """Returns (all logs on disk for this grid, number of failed episodes). One world model is
+    shared by all worker threads: inference only, no state between calls."""
     episodes_dir = out_dir / "episodes"
     episodes_dir.mkdir(parents=True, exist_ok=True)
     jobs = [(t, s, seed) for t in tasks for s in settings for seed in seeds]
@@ -79,7 +92,7 @@ def run_grid(
 
     failures = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(run_one, *job, model_factory): job for job in todo}
+        futures = {pool.submit(run_one, *job, model_factory, world_model): job for job in todo}
         for i, future in enumerate(as_completed(futures), 1):
             job_id = episode_id(*futures[future])
             # One failed episode (API error, timeout) must not kill a long run. It has no log

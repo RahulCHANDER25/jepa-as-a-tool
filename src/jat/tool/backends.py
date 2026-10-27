@@ -1,12 +1,14 @@
 """What `simulate` runs on. Two backends share one interface, so the agent code never changes:
-the oracle (real PushT physics) now, the V-JEPA 2 world model from M4.
+the oracle (real PushT physics) and the V-JEPA 2 world model.
 """
 
 from typing import Any, Protocol
 
 import numpy as np
+import torch
 
 from jat.env.pusht import Push, World
+from jat.wm.models import WorldModel
 
 
 class Backend(Protocol):
@@ -24,11 +26,7 @@ class Backend(Protocol):
 
 class OracleBackend:
     """Perfect imagination: a state is a pose, and stepping runs the real physics on a copy.
-
-    `read` returns the true pose. From M4 on, the LLM-facing reading goes through
-    render -> V-JEPA 2 -> translator instead, so oracle and world model differ only in the
-    predictor.
-    """
+    `read` returns the true pose: the upper bound, with perfect perception too."""
 
     name = "oracle"
 
@@ -40,3 +38,23 @@ class OracleBackend:
 
     def read(self, states: list) -> list[np.ndarray]:
         return [np.asarray(s) for s in states]
+
+
+class WorldModelBackend:
+    """Imagination in V-JEPA 2 latent space. A state is a latent [P, D]. Every pose the LLM
+    reads, real or imagined, is the translator's reading of a latent."""
+
+    name = "world_model"
+
+    def __init__(self, world_model: WorldModel):
+        self.world_model = world_model
+
+    def observe(self, world: World) -> torch.Tensor:
+        return self.world_model.encode([world.pose()])[0]
+
+    def step(self, states: list, pushes: list[Push]) -> list[torch.Tensor]:
+        actions = np.stack([p.numeric() for p in pushes])
+        return list(self.world_model.step(torch.stack(states), actions))
+
+    def read(self, states: list) -> list[np.ndarray]:
+        return list(self.world_model.read(torch.stack(states)))

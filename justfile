@@ -20,3 +20,22 @@ lint:
 fmt:
     uv run ruff check --fix .
     uv run ruff format .
+
+# World-model pipeline. On a GPU box, notebooks/kaggle.ipynb runs the same steps.
+
+# Generate random-push episodes
+gen data="data/random-4k" *args="":
+    uv run jat gen {{data}} {{args}}
+
+# Encode every pose with V-JEPA 2
+encode data="data/random-4k" *args="":
+    uv run jat encode {{data}} {{args}}
+
+# Train the translator, then the predictor
+train data="data/random-4k" run="runs/wm":
+    uv run jat train translator {{data}} --out {{run}}
+    uv run jat train predictor {{data}} --out {{run}}
+
+# Imagined vs true pose after 0..T pushes
+wm-eval data="data/random-4k" run="runs/wm":
+    uv run jat wm-eval {{data}} --wm {{run}}
