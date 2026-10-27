@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+/lib/
 lib64/
 parts/
 sdist/
@@ -153,7 +153,7 @@ activemq-data/
 .env
 .envrc
 .venv
-env/
+/env/
 venv/
 ENV/
 env.bak/
@@ -218,3 +218,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Private planning notes (not part of the public repo)
+plan/
+
+# Pipeline outputs and throwaway scripts
+/data/
+/runs/
+/results/
+/scratch/
