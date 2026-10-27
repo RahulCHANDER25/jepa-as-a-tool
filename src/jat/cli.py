@@ -64,7 +64,7 @@ def eval_(
     task_seed: int = 0,
     settings: str = "no_tool,oracle_tool,random",
     seeds: int = 1,
-    provider: str = "baseten",
+    provider: str = "meta",
     temperature: float = 0.7,
     workers: int = 8,
 ) -> None:
