@@ -1,0 +1,101 @@
+---
+layout: ../layouts/Article.astro
+title: Imagine before you push
+subtitle: An LLM agent that tests its moves in a learned world model before touching the real table.
+description: Muse Spark plans pushes on PushT by imagining them first, with a world model built on Meta's V-JEPA 2.
+---
+
+{/*
+  This file is the whole article. Edit the text freely: it is plain Markdown.
+  The <Tags> are live figures. Each takes an episode id from web/public/data/episodes/index.json,
+  written by `jat export-web`.
+*/}
+
+import EpisodePlayer from "../components/EpisodePlayer.astro";
+import Compare from "../components/Compare.astro";
+import ImaginationTree from "../components/ImaginationTree.astro";
+import ResultsChart from "../components/ResultsChart.astro";
+import HorizonChart from "../components/HorizonChart.astro";
+import Pipeline from "../components/Pipeline.astro";
+import Success from "../components/Success.astro";
+
+<div class="hero">
+  <EpisodePlayer episode="rotate-0-012__wm_tool__s0" compact autoplay />
+</div>
+
+The gray T has to reach the green outline. Before each real push, the agent **imagines**: it asks a
+world model what several candidate pushes would do (the blue ghosts), keeps the best, and only then
+pushes for real. The dashed outlines show where the real physics would actually put the T.
+
+## The problem
+
+Language models reason well in words, but they cannot run physics in their head. Asked to rotate a
+block by pushing it, an LLM guesses where to push, and has no way to check the guess before acting.
+
+Same task, same model. On the left the LLM acts on its own; on the right it can imagine first.
+
+<Compare task="rotate-0-020" />
+
+## The idea: a world model as a tool
+
+We give the agent one extra tool, `simulate(from_frame, plans)`. It takes candidate push sequences
+and returns where the T would end up after each push, as text. Every imagined state gets an id
+(`I1`, `I2`, …), so the agent can continue a promising branch later.
+
+The world model behind the tool never saw the physics engine. It learned only from images:
+
+<Pipeline />
+
+- **V-JEPA 2**, Meta's self-supervised video model, turns a picture of the table into a latent: 64
+  tokens of 1,024 numbers. It stays frozen.
+- **The predictor**, a small transformer we trained, takes a latent and a push and predicts the next
+  latent. Chains of pushes stay in latent space: no image is ever generated.
+- **The translator** reads a latent and says where the T is. The LLM only ever sees its text.
+
+Because it learns from pixels alone, the same recipe applies where no simulator exists. PushT is
+the lab where we can check every imagined frame against the true physics.
+
+## Watch it think
+
+Step through a full episode. Each _Imagine_ step shows the plans the agent tried; each _Push_
+step is a real push on the table.
+
+<EpisodePlayer episode="rotate-0-021__wm_tool__s0" />
+
+## The imagination tree
+
+Every frame of one episode. Real frames form the trunk; imagined frames branch off. Underlined
+frames are pushes the agent imagined and then ran for real.
+
+<ImaginationTree episode="rotate-0-012__wm_tool__s0" />
+
+## Results
+
+Muse Spark on the same tasks, in three settings: alone, with the world model, and with the real
+physics engine as its imagination (the best case). With the world model the agent solves
+<Success setting="wm_tool" /> of the tasks, against <Success setting="no_tool" /> alone.
+
+<ResultsChart />
+
+How far ahead can it imagine? The longer the chain of imagined pushes, the more the errors add up.
+The second version of the world model, trained on 3× more data and longer chains, stays accurate
+much longer.
+
+<HorizonChart />
+
+## Limits
+
+- The world model is sometimes wrong, mostly on hard contacts: grazing a corner, or the T against a
+  wall. In this episode the agent notices: _"That push rotated the wrong way in reality, so I'll run
+  a fresh batch of simulations from the current position."_
+
+<EpisodePlayer episode="rotate-0-022__wm_tool__s0" />
+
+- PushT is a 2D lab. The next step is real camera images, where V-JEPA 2 is at home.
+
+## Built during the hackathon
+
+Everything in the repository was written between Oct 27 and Nov 4, 2026: the push action on top of
+`gym-pusht`, the tasks, the `simulate` tool and agent loop, the data generator, the V-JEPA 2
+encoding, the predictor and translator, the evaluation and this site. Meta models used: V-JEPA 2
+(ViT-L) as the frozen encoder, and Muse Spark as the agent, through the Meta Model API.

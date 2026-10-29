@@ -1,0 +1,14 @@
+---
+// Inline success rate from the exported results, e.g. <Success setting="wm_tool" />.
+import results from "../../public/data/results.json";
+
+interface Props {
+  setting: string;
+  family?: string;
+}
+const { setting, family = "all" } = Astro.props;
+const row = results.rows.find((r) => r.setting === setting && r.family === family);
+if (!row) throw new Error(`no results row for ${family} / ${setting}`);
+---
+
+<strong>{Math.round(row.success_rate * 100)}%</strong>

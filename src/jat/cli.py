@@ -14,11 +14,6 @@ def _load_env() -> None:
     load_dotenv()
 
 
-def _not_ready(milestone: str) -> None:
-    typer.echo(f"Not implemented yet (planned for {milestone}).", err=True)
-    raise typer.Exit(code=1)
-
-
 def _csv(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
@@ -218,6 +213,21 @@ def report(run: Annotated[Path, typer.Argument(help="Run folder written by `jat 
 
 
 @app.command(name="export-web")
-def export_web() -> None:
+def export_web(
+    run: Annotated[Path, typer.Option(help="Run folder written by `jat eval`.")],
+    wm: Annotated[
+        list[str], typer.Option(help="name=folder of a world-model run, e.g. v2=runs/wm-v2.")
+    ] = [],  # noqa: B006 (typer reads the default, never mutates it)
+    out: Path = Path("web/public/data"),
+) -> None:
     """Copy results and episode logs into the website data folder."""
-    _not_ready("the website step")
+    from jat.eval.export import export_web as export
+
+    models = {}
+    for item in wm:
+        name, sep, folder = item.partition("=")
+        if not sep:
+            raise typer.BadParameter(f"expected name=folder, got {item!r}")
+        models[name] = Path(folder)
+    n = export(run, models, out)
+    typer.echo(f"{n} episodes, results and {len(models)} world-model tables -> {out}")

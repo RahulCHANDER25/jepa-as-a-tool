@@ -1,0 +1,50 @@
+---
+// World-model accuracy vs number of imagined pushes in a row, one line per model version.
+import horizon from "../../public/data/horizon.json";
+---
+
+<figure class="horizon wide" data-horizon={JSON.stringify(horizon.models)}>
+  <ul class="legend">
+    {
+      horizon.models.map((m, i) => (
+        <li>
+          <i class={i === horizon.models.length - 1 ? "k-line s-main" : "k-line s-other"} />
+          world model {m.name}
+        </li>
+      ))
+    }
+  </ul>
+  <div class="horizon-chart" role="img" aria-label="Share of accurate predictions vs imagined pushes in a row"></div>
+  <figcaption>
+    Share of imagined poses within 20 px and 15° of where the real physics puts the T, after 0 to
+    {Math.max(...horizon.models.flatMap((m) => m.rows.map((r) => r.horizon)))} imagined pushes in a row.
+    Test episodes the model never trained on.
+  </figcaption>
+  <details class="table-view">
+    <summary>Show as a table</summary>
+    <table>
+      <thead>
+        <tr><th>Model</th><th>Imagined pushes</th><th>Accurate</th><th>Median error</th></tr>
+      </thead>
+      <tbody>
+        {
+          horizon.models.flatMap((m) =>
+            m.rows.map((r) => (
+              <tr>
+                <td>{m.name}</td>
+                <td>{r.horizon}</td>
+                <td>{Math.round(r.within_tolerance * 100)}%</td>
+                <td>{r.px_median.toFixed(1)} px, {r.deg_median.toFixed(1)}°</td>
+              </tr>
+            )),
+          )
+        }
+      </tbody>
+    </table>
+  </details>
+</figure>
+
+<script>
+  import { mountHorizonCharts } from "../lib/horizon";
+  mountHorizonCharts();
+</script>

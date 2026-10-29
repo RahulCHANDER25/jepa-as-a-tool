@@ -1,0 +1,59 @@
+---
+// Replays one logged episode. `compact` hides the transcript; `autoplay` loops while visible.
+interface Props {
+  episode: string;
+  title?: string;
+  compact?: boolean;
+  autoplay?: boolean;
+}
+const { episode, title, compact = false, autoplay = false } = Astro.props;
+---
+
+<figure
+  class:list={["player", { compact }]}
+  data-player
+  data-episode={episode}
+  data-compact={compact ? "1" : undefined}
+  data-autoplay={autoplay ? "1" : undefined}
+>
+  {title && <figcaption class="player-title">{title}</figcaption>}
+  <div class="player-body">
+    <div class="stage">
+      <canvas role="img" aria-label="The PushT table: real T in gray, goal in green, imagined T's in blue"></canvas>
+      <p class="caption" data-caption aria-live="polite">Loading…</p>
+    </div>
+    {!compact && <ol class="transcript" data-transcript aria-label="What the agent did"></ol>}
+  </div>
+  <div class="controls">
+    {!compact && <button type="button" data-prev aria-label="Previous step">‹</button>}
+    <button type="button" data-play aria-label="Play">▶</button>
+    {
+      !compact && (
+        <>
+          <button type="button" data-next aria-label="Next step">›</button>
+          <input type="range" min="0" value="0" data-slider aria-label="Step" />
+          <span class="counter" data-counter />
+          <label class="toggle">
+            <input type="checkbox" data-truth checked /> show the real outcome
+          </label>
+        </>
+      )
+    }
+  </div>
+  {
+    !compact && (
+      <ul class="legend">
+        <li><i class="k-real" />real T</li>
+        <li><i class="k-goal" />goal</li>
+        <li><i class="k-ghost" />imagined T</li>
+        <li><i class="k-truth" />where it really goes</li>
+        <li><i class="k-pusher" />pusher</li>
+      </ul>
+    )
+  }
+</figure>
+
+<script>
+  import { mountPlayers } from "../lib/player";
+  mountPlayers();
+</script>

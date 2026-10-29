@@ -1,0 +1,68 @@
+---
+import "../styles/global.css";
+
+interface Props {
+  frontmatter: { title: string; subtitle: string; description: string };
+}
+const { title, subtitle, description } = Astro.props.frontmatter;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <script is:inline>
+      // Before first paint, so the page never flashes the wrong theme.
+      (() => {
+        let saved = null;
+        try {
+          saved = localStorage.getItem("theme");
+        } catch {}
+        const os = matchMedia("(prefers-color-scheme: dark)");
+        const apply = (t) => (document.documentElement.dataset.theme = t);
+        apply(saved ?? (os.matches ? "dark" : "light"));
+        os.addEventListener("change", (e) => {
+          let chosen = null;
+          try {
+            chosen = localStorage.getItem("theme");
+          } catch {}
+          if (!chosen) apply(e.matches ? "dark" : "light");
+        });
+      })();
+    </script>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M4 5h24v6H19v18h-6V11H4z' fill='%23778899'/></svg>"
+    />
+  </head>
+  <body>
+    <button type="button" class="theme-toggle" data-theme-toggle aria-label="Switch between light and dark mode">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"></path></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
+      <span data-theme-label>Theme</span>
+    </button>
+    <main class="article">
+      <h1>{title}</h1>
+      <p class="subtitle">{subtitle}</p>
+      <p class="byline">
+        A Meta Global AI Developer Hackathon project ·
+        <a href="https://github.com/RahulCHANDER25/jepa-as-a-tool">code on GitHub</a>
+      </p>
+      <slot />
+      <footer class="footer">
+        Built during the hackathon, Oct 27 – Nov 4, 2026. PushT physics from
+        <a href="https://github.com/huggingface/gym-pusht">gym-pusht</a>, encoder
+        <a href="https://github.com/facebookresearch/vjepa2">V-JEPA 2</a>, agent Muse Spark.
+      </footer>
+    </main>
+    <script>
+      import { mountThemeToggle } from "../lib/theme";
+      mountThemeToggle();
+    </script>
+  </body>
+</html>

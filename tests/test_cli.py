@@ -24,6 +24,6 @@ def test_wm_tool_without_a_world_model_is_refused(tmp_path):
     assert result.exit_code != 0 and "--wm" in result.output
 
 
-def test_unimplemented_stage_exits_with_error():
-    result = runner.invoke(app, ["export-web"])
-    assert result.exit_code == 1
+def test_export_web_rejects_a_model_without_a_name(tmp_path):
+    result = runner.invoke(app, ["export-web", "--run", str(tmp_path), "--wm", "runs/wm"])
+    assert result.exit_code != 0 and "name=folder" in result.output

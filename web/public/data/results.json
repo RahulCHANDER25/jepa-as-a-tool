@@ -1,0 +1,109 @@
+{
+ "run": "gate-a",
+ "rows": [
+  {
+   "family": "rotate",
+   "setting": "no_tool",
+   "n": 30,
+   "success_rate": 0.6333333333333333,
+   "ci_low": 0.45513246433604937,
+   "ci_high": 0.7812629779598231,
+   "position_error": 15.06486527582813,
+   "angle_error": 10.106869733817621,
+   "real_pushes": 2.7333333333333334,
+   "imagined_pushes": 0.0,
+   "tokens": 37110.333333333336
+  },
+  {
+   "family": "rotate",
+   "setting": "oracle_tool",
+   "n": 30,
+   "success_rate": 1.0,
+   "ci_low": 0.8864829086095221,
+   "ci_high": 1.0,
+   "position_error": 8.576973884522591,
+   "angle_error": 6.8300615583549815,
+   "real_pushes": 2.1333333333333333,
+   "imagined_pushes": 48.46666666666667,
+   "tokens": 70842.86666666667
+  },
+  {
+   "family": "rotate",
+   "setting": "random",
+   "n": 30,
+   "success_rate": 0.03333333333333333,
+   "ci_low": 0.0059084379948573795,
+   "ci_high": 0.16670751396958874,
+   "position_error": 84.86837447109048,
+   "angle_error": 47.55863187801067,
+   "real_pushes": 3.0,
+   "imagined_pushes": 0.0,
+   "tokens": 0.0
+  },
+  {
+   "family": "rotate",
+   "setting": "wm_tool",
+   "n": 30,
+   "success_rate": 0.7666666666666667,
+   "ci_low": 0.5907132766967574,
+   "ci_high": 0.8820776078949878,
+   "position_error": 14.16031317117368,
+   "angle_error": 9.20593397283696,
+   "real_pushes": 2.6666666666666665,
+   "imagined_pushes": 76.73333333333333,
+   "tokens": 125193.0
+  },
+  {
+   "family": "all",
+   "setting": "no_tool",
+   "n": 30,
+   "success_rate": 0.6333333333333333,
+   "ci_low": 0.45513246433604937,
+   "ci_high": 0.7812629779598231,
+   "position_error": 15.06486527582813,
+   "angle_error": 10.106869733817621,
+   "real_pushes": 2.7333333333333334,
+   "imagined_pushes": 0.0,
+   "tokens": 37110.333333333336
+  },
+  {
+   "family": "all",
+   "setting": "oracle_tool",
+   "n": 30,
+   "success_rate": 1.0,
+   "ci_low": 0.8864829086095221,
+   "ci_high": 1.0,
+   "position_error": 8.576973884522591,
+   "angle_error": 6.8300615583549815,
+   "real_pushes": 2.1333333333333333,
+   "imagined_pushes": 48.46666666666667,
+   "tokens": 70842.86666666667
+  },
+  {
+   "family": "all",
+   "setting": "random",
+   "n": 30,
+   "success_rate": 0.03333333333333333,
+   "ci_low": 0.0059084379948573795,
+   "ci_high": 0.16670751396958874,
+   "position_error": 84.86837447109048,
+   "angle_error": 47.55863187801067,
+   "real_pushes": 3.0,
+   "imagined_pushes": 0.0,
+   "tokens": 0.0
+  },
+  {
+   "family": "all",
+   "setting": "wm_tool",
+   "n": 30,
+   "success_rate": 0.7666666666666667,
+   "ci_low": 0.5907132766967574,
+   "ci_high": 0.8820776078949878,
+   "position_error": 14.16031317117368,
+   "angle_error": 9.20593397283696,
+   "real_pushes": 2.6666666666666665,
+   "imagined_pushes": 76.73333333333333,
+   "tokens": 125193.0
+  }
+ ]
+}

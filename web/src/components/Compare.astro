@@ -1,0 +1,15 @@
+---
+// The same task, LLM alone vs LLM + world model, side by side.
+import EpisodePlayer from "./EpisodePlayer.astro";
+
+interface Props {
+  task: string;
+  seed?: number;
+}
+const { task, seed = 0 } = Astro.props;
+---
+
+<div class="compare wide">
+  <EpisodePlayer episode={`${task}__no_tool__s${seed}`} title="LLM alone" compact autoplay />
+  <EpisodePlayer episode={`${task}__wm_tool__s${seed}`} title="LLM + world model" compact autoplay />
+</div>

@@ -1,0 +1,88 @@
+---
+// Success rate per setting with its 95% interval, one panel per task family.
+import results from "../../public/data/results.json";
+
+const SETTINGS = [
+  ["no_tool", "LLM alone"],
+  ["wm_tool", "LLM + world model"],
+  ["oracle_tool", "LLM + real physics"],
+  ["random", "Random pushes"],
+] as const;
+const FAMILIES = [
+  ["all", "All tasks"],
+  ["translate", "Move"],
+  ["rotate", "Turn"],
+  ["pose", "Move and turn"],
+] as const;
+const pct = (v: number) => `${Math.round(v * 100)}%`;
+const panels = FAMILIES.map(([family, title]) => ({
+  title,
+  rows: SETTINGS.flatMap(([setting, label]) => {
+    const row = results.rows.find((r) => r.family === family && r.setting === setting);
+    return row ? [{ setting, label, ...row }] : [];
+  }),
+})).filter((p) => p.rows.length > 0);
+// "All tasks" repeats the single family when there is only one
+const shown = panels.length === 2 ? panels.slice(1) : panels;
+---
+
+<figure class="results wide">
+  <div class="results-panels">
+    {
+      shown.map((panel) => (
+        <section class="results-panel" aria-label={panel.title}>
+          <h4>
+            {panel.title} <span class="muted">· {panel.rows[0].n} tasks</span>
+          </h4>
+          {panel.rows.map((r) => (
+            <div class="bar-row">
+              <span class="bar-label">{r.label}</span>
+              <span
+                class="bar-track"
+                tabindex="0"
+                data-tip={`${r.label} · ${panel.title}\nSuccess ${pct(r.success_rate)} of ${r.n}\n95% range ${pct(r.ci_low)}–${pct(r.ci_high)}\nMedian final error ${Math.round(r.position_error)} px, ${Math.round(r.angle_error)}°`}
+              >
+                <span class={`bar s-${r.setting}`} style={`width:${r.success_rate * 100}%`} />
+                <span class="ci" style={`left:${r.ci_low * 100}%;width:${(r.ci_high - r.ci_low) * 100}%`} />
+              </span>
+              <span class="bar-value">{pct(r.success_rate)}</span>
+            </div>
+          ))}
+        </section>
+      ))
+    }
+  </div>
+  <figcaption>
+    Share of tasks solved. The thin line is the 95% range: with this many tasks, the true rate is
+    very likely inside it.
+  </figcaption>
+  <details class="table-view">
+    <summary>Show as a table</summary>
+    <table>
+      <thead>
+        <tr><th>Family</th><th>Setting</th><th>Tasks</th><th>Success</th><th>95% range</th><th>Median error</th></tr>
+      </thead>
+      <tbody>
+        {
+          shown.flatMap((panel) =>
+            panel.rows.map((r) => (
+              <tr>
+                <td>{panel.title}</td>
+                <td>{r.label}</td>
+                <td>{r.n}</td>
+                <td>{pct(r.success_rate)}</td>
+                <td>{pct(r.ci_low)}–{pct(r.ci_high)}</td>
+                <td>{Math.round(r.position_error)} px, {Math.round(r.angle_error)}°</td>
+              </tr>
+            )),
+          )
+        }
+      </tbody>
+    </table>
+  </details>
+</figure>
+
+<script>
+  import { mountTooltips } from "../lib/tooltip";
+  mountTooltips();
+</script>
