@@ -40,6 +40,14 @@ train data="data/random-4k" run="runs/wm":
 wm-eval data="data/random-4k" run="runs/wm":
     uv run jat wm-eval {{data}} --wm {{run}}
 
+# What the worlds look like: looks/<world>.png (what V-JEPA 2 sees) and .mp4 (random pushes)
+look world="":
+    uv run jat show {{ if world == "" { "" } else { "--world " + world } }}
+
+# A 3D world in MuJoCo's interactive viewer (tabletop, tabletop-new-look, billiards)
+look-3d world="billiards":
+    uv run jat show --world {{world}} --interactive
+
 # Website. Copy an eval run and the world-model tables into web/public/data
 export-web run="results/eval-wm-v2":
     uv run jat export-web --run {{run}} --wm v1=runs/wm --wm v2=runs/wm-v2

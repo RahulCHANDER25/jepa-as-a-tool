@@ -285,6 +285,26 @@ def publish(
     typer.echo(upload(repo, folders, private))
 
 
+@app.command()
+def show(
+    world: Annotated[str | None, typer.Option(help=f"{WORLD_HELP} Default: every world.")] = None,
+    out: Path = Path("looks"),
+    interactive: bool = typer.Option(False, help="3D worlds: open MuJoCo's viewer instead."),
+    seed: int = 0,
+) -> None:
+    """What a world looks like: the frames V-JEPA 2 sees (png) and random pushes (mp4)."""
+    from jat import show as viewer
+
+    if interactive:
+        if world is None:
+            raise typer.BadParameter("--interactive needs --world")
+        viewer.interactive(_world(world).name, seed)
+        return
+    for name in [_world(world).name] if world else WORLDS:
+        image, video = viewer.look(name, out, seed)
+        typer.echo(f"{name}: {image}  {video}")
+
+
 @app.command(name="wm-eval")
 def wm_eval(
     data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],

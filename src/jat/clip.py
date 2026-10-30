@@ -38,7 +38,7 @@ def chosen_plan(log: EpisodeLog, real: str, push) -> tuple[str | None, list[Fram
     return (best.id if best is not None and gap(best) < 20 else None), candidates
 
 
-class _Film:
+class Film:
     def __init__(self, world, size: int):
         import mujoco
 
@@ -104,7 +104,7 @@ def render_clip(log: EpisodeLog, out: Path, size: int = 512) -> Path:
     world = get_world(log.task.world)
     if not hasattr(world, "clip_scene"):
         raise ValueError(f"{world.name} is not a 3D world: clips need MuJoCo")
-    film = _Film(world, size)
+    film = Film(world, size)
     frames = {f.id: f for f in log.frames}
     goal = log.task.goal
     thoughts = [t.content.strip() for t in log.turns if t.content.strip()]
@@ -146,7 +146,7 @@ def render_clip(log: EpisodeLog, out: Path, size: int = 512) -> Path:
         f"{log.outcome.position_error:.0f} px from the goal."
     )
     film.shot(frames[real].true_pose, goal=goal, seconds=1.5)
-    return _write(film.frames, out)
+    return write_video(film.frames, out)
 
 
 def _encoder() -> str | None:
@@ -158,7 +158,7 @@ def _encoder() -> str | None:
     return next((e for e in ("libx264", "libopenh264") if e in listing.stdout), None)
 
 
-def _write(frames: list[np.ndarray], out: Path) -> Path:
+def write_video(frames: list[np.ndarray], out: Path) -> Path:
     out.parent.mkdir(parents=True, exist_ok=True)
     h, w = frames[0].shape[:2]
     encoder = _encoder()

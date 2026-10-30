@@ -230,3 +230,4 @@ plan/
 
 # Dream-mode bundles (jat export-dream): large binaries, published separately
 /web/public/dream/
+/looks/
