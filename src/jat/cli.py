@@ -88,50 +88,104 @@ app.add_typer(train_app, name="train")
 
 @train_app.command("translator")
 def train_translator(
-    data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
+    data: Annotated[
+        list[Path], typer.Argument(help="Dataset folders with latents, one per world.")
+    ],
     out: Annotated[Path, typer.Option(help="Run folder, e.g. runs/wm.")],
     steps: int = 5000,
     batch: int = 256,
     lr: float = 1e-3,
+    trunk_from: Annotated[
+        Path | None, typer.Option(help="translator.pt whose trunk to reuse, frozen: heads only.")
+    ] = None,
 ) -> None:
-    """Latent -> state. Its test error says whether V-JEPA 2 latents show the world's state."""
+    """Latent -> state, one head per world on a shared trunk. Its test error says whether
+    V-JEPA 2 latents show each world's state."""
     from jat.wm import train
     from jat.wm.dataset import LatentData
     from jat.wm.encoder import default_device
 
-    result = train.train_translator(LatentData(data, default_device()), out, steps, batch, lr)
-    test = result["test"]
-    typer.echo(
-        f"\nTranslator on test frames: median {test['px_median']:.1f} px, {test['deg_median']:.1f}°"
-        f" (90% under {test['px_p90']:.1f} px, {test['deg_p90']:.1f}°)"
-    )
+    datasets = [LatentData(folder, default_device()) for folder in data]
+    result = train.train_translator(datasets, out, steps, batch, lr, trunk_from=trunk_from)
+    for world, errors in result.items():
+        test = errors["test"]
+        typer.echo(
+            f"\n{world}: translator on test frames: median {test['px_median']:.1f} px, "
+            f"{test['deg_median']:.1f}° (90% under {test['px_p90']:.1f} px, {test['deg_p90']:.1f}°)"
+        )
 
 
 @train_app.command("predictor")
 def train_predictor(
     data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
-    out: Annotated[Path, typer.Option(help="Run folder holding translator.pt.")],
+    out: Annotated[Path, typer.Option(help="Run folder; the predictor is written here.")],
     steps: int = 20000,
     batch: int = 64,
     rollout: int = typer.Option(3, help="Pushes chained per training sample."),
     lr: float = 3e-4,
-    keypoint_weight: float = 1.0,
+    readout_weight: float = 1.0,
     idm_weight: float = 0.1,
+    translator: Annotated[
+        Path | None, typer.Option(help="Translator to read through. Default: <out>/translator.pt.")
+    ] = None,
+    init: Annotated[Path | None, typer.Option(help="Predictor checkpoint to start from.")] = None,
+    extra: Annotated[
+        Path | None, typer.Option(help="Second dataset of the same world, e.g. `jat learn-data`.")
+    ] = None,
+    extra_share: float = typer.Option(0.5, help="Share of the batches drawn from --extra."),
 ) -> None:
     """(latent, push) -> next latent, trained over chains of pushes."""
     from jat.wm import train
     from jat.wm.dataset import LatentData
     from jat.wm.encoder import default_device
 
+    device = default_device()
     train.train_predictor(
-        LatentData(data, default_device()),
+        LatentData(data, device),
         out,
         steps=steps,
         batch=batch,
         rollout=rollout,
         lr=lr,
-        keypoint_weight=keypoint_weight,
+        readout_weight=readout_weight,
         idm_weight=idm_weight,
+        translator_path=translator,
+        init=init,
+        extra=LatentData(extra, device) if extra else None,
+        extra_share=extra_share,
+    )
+
+
+@app.command()
+def transfer(
+    data: Annotated[Path, typer.Argument(help="Dataset folder of the new world, with latents.")],
+    trunk_from: Annotated[Path, typer.Option(help="translator.pt trained on other worlds.")],
+    out: Annotated[Path, typer.Option(help="Folder for the table and the trained heads.")],
+    budgets: str = typer.Option("250,1000,6000", help="Training episodes to try."),
+    steps: int = 3000,
+) -> None:
+    """Transfer test: a head on a frozen trunk vs a translator from scratch, per label budget."""
+    from jat.wm import train
+    from jat.wm.dataset import LatentData
+    from jat.wm.encoder import default_device
+
+    data_ = LatentData(data, default_device())
+    train.transfer_test(data_, trunk_from, out, [int(b) for b in _csv(budgets)], steps)
+
+
+@app.command(name="learn-data")
+def learn_data(
+    out: Annotated[Path, typer.Argument(help="Dataset folder to write; then `jat encode` it.")],
+    runs: Annotated[list[Path], typer.Option("--run", help="Evaluation run folder(s).")],
+) -> None:
+    """Learning from use: the agent's imagined pushes and their true results, as a dataset."""
+    from jat.eval.learn import transitions
+
+    rollouts = transitions(runs)
+    rollouts.save(out)
+    typer.echo(
+        f"{rollouts.n_episodes} one-push episodes ({rollouts.world}) -> {out / 'rollouts.npz'}  "
+        f"(something moved in {rollouts.moved.mean():.0%})"
     )
 
 
@@ -140,8 +194,13 @@ def wm_eval(
     data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
     wm: Annotated[Path, typer.Option(help="Run folder with translator.pt and predictor.pt.")],
     split: str = "test",
+    head: Annotated[
+        str | None, typer.Option(help="Read with this world's head. Default: the data's world.")
+    ] = None,
 ) -> None:
     """Imagined state vs true state after 0, 1, 2, ... pushes. No LLM."""
+    import json
+
     from jat.wm.data import TEST, VAL
     from jat.wm.dataset import LatentData
     from jat.wm.encoder import default_device
@@ -151,10 +210,12 @@ def wm_eval(
     device = default_device()
     translator, _ = load_module(Translator, wm / "translator.pt", device)
     predictor, _ = load_module(Predictor, wm / "predictor.pt", device)
+    data_ = LatentData(data, device)
     rows = rollout_errors(
-        LatentData(data, device), predictor, translator, {"val": VAL, "test": TEST}[split]
+        data_, predictor, translator, {"val": VAL, "test": TEST}[split], head=head
     )
     typer.echo(format_rows(rows))
+    (wm / f"wm_eval_{data_.world}.json").write_text(json.dumps({split: rows}, indent=1))
 
 
 @app.command(name="eval")
@@ -166,8 +227,11 @@ def eval_(
     task_seed: int = 0,
     settings: str = "no_tool,oracle_tool,random",
     wm: Annotated[
-        Path | None, typer.Option(help="World model run folder; needed for wm_tool.")
-    ] = None,
+        list[str],
+        typer.Option(
+            help="World model run folder for wm_tool; tag=folder for a setting wm_tool@tag."
+        ),
+    ] = [],  # noqa: B006 (typer reads the default, never mutates it)
     seeds: int = 1,
     provider: str = "meta",
     temperature: float = 0.7,
@@ -183,16 +247,25 @@ def eval_(
     w = _world(world)
     task_list = [w.sample_task(f, task_seed, i) for f in _csv(families) for i in range(n)]
     setting_list = _csv(settings)
-    world_model = None
-    if "wm_tool" in setting_list:
-        if wm is None:
-            raise typer.BadParameter("wm_tool needs --wm <run folder>")
+    folders = {}
+    for item in wm:
+        tag, sep, folder = item.rpartition("=")
+        folders[tag if sep else ""] = Path(folder)
+    world_models = {}
+    for setting in setting_list:
+        base, _, tag = setting.partition("@")
+        if base != "wm_tool" or tag in world_models:
+            continue
+        if tag not in folders:
+            raise typer.BadParameter(f"{setting} needs --wm {tag + '=' if tag else ''}<run folder>")
         from jat.wm.models import WorldModel
 
-        world_model = WorldModel.load(wm)
-        if world_model.world.name != w.name:
+        # Rendered with the task's world: an evaluation-only world uses another world's model.
+        world_models[tag] = WorldModel.load(folders[tag], world=w.name)
+        if world_models[tag].head != w.model_world:
             raise typer.BadParameter(
-                f"--wm was trained on {world_model.world.name!r}, the tasks are in {w.name!r}"
+                f"{folders[tag]} was trained on {world_models[tag].head!r}; "
+                f"{w.name!r} needs a model of {w.model_world!r}"
             )
 
     def model_factory():
@@ -214,7 +287,7 @@ def eval_(
         model_factory if needs_llm else None,
         out,
         workers,
-        world_model,
+        world_models,
     )
     typer.echo("\n" + format_table(summarize(logs)))
     if failures:

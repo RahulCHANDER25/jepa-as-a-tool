@@ -129,7 +129,7 @@ class Session:
                 note = (
                     ""
                     if self.world.moved(parent.pose, pose)
-                    else "  (the T does not move: the push misses it)"
+                    else f"  ({self.world.tool_text.misses})"
                 )
                 lines[i].append(f"  {frame_id} = {parent.id} + push {push.text()}{note}")
                 lines[i].append(indent(self.world.state_text(pose, self.goal), "    "))
@@ -159,7 +159,7 @@ class Session:
         lines = [f"Pushed {push.text()} on the real table.", f"Current real frame: {frame_id}"]
         lines.append(self.world.state_text(pose, self.goal))
         if not result.moved:
-            lines.append("The T did not move: the push missed it.")
+            lines.append(self.world.tool_text.missed)
         if result.jammed:
             lines.append("The T got pinned against a wall, so the push stopped early.")
         if self.pushes_left == 0:
@@ -182,7 +182,8 @@ class Session:
                     func=self.simulate,
                     name="simulate",
                     description=(
-                        "Imagine pushes without touching the real table. Predicts where the T ends up "
+                        "Imagine pushes without touching the real table. Predicts "
+                        f"{self.world.tool_text.ends_up} "
                         "after each push of each plan, starting from `from_frame`. Each predicted step "
                         "gets a new frame id (I1, I2, ...) that a later call can start from. "
                         f"Up to {b.plans_per_call} plans of up to {b.pushes_per_plan} pushes per call; "
@@ -205,7 +206,7 @@ class Session:
             StructuredTool.from_function(
                 func=self.done,
                 name="done",
-                description="End the episode now. Call it when the T is at the goal.",
+                description=f"End the episode now. Call it when {self.world.tool_text.at_goal}.",
             )
         )
         return tools

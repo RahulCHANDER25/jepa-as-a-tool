@@ -10,19 +10,38 @@ import pytest
 import torch
 
 from jat.wm.data import TEST, VAL, generate
-from jat.wm.models import pose_to_output
+from jat.wm.readouts import readout
 
 
 class FakeEncoder:
-    """Stands in for V-JEPA 2 (a 1.3 GB download): every token holds the pose output."""
+    """Stands in for V-JEPA 2 (a 1.3 GB download): every token holds the world's readout of the
+    state, so a translator can read it exactly."""
 
     n_tokens, dim = 4, 8
 
     def encode_states(self, world, states) -> torch.Tensor:
-        out = pose_to_output(torch.tensor(np.asarray(states), dtype=torch.float32))
+        out = readout(world.name).encode(torch.tensor(np.asarray(states), dtype=torch.float32))
         z = torch.zeros(len(out), self.n_tokens, self.dim)
-        z[:, :, :4] = out[:, None, :]
+        z[:, :, : out.shape[1]] = out[:, None, :]
         return z
+
+
+def make_fake_dataset(folder, world: str, episodes: int = 24, steps: int = 3):
+    """A dataset folder with short random episodes and fake latents; 4 VAL, 4 TEST episodes."""
+    from jat.worlds import get_world
+
+    rollouts = generate(episodes, n_steps=steps, workers=1, world=world)
+    rollouts.split[:] = 0
+    rollouts.split[:4], rollouts.split[4:8] = VAL, TEST
+    rollouts.save(folder)
+    encoder = FakeEncoder()
+    states = rollouts.poses.reshape(-1, rollouts.poses.shape[-1])
+    z = encoder.encode_states(get_world(world), states)
+    shape = [episodes, steps + 1, encoder.n_tokens, encoder.dim]
+    np.save(folder / "latents.npy", z.reshape(shape).numpy().astype(np.float16))
+    meta = {"world": world, "encoder": "fake", "pool": 1, "shape": shape}
+    (folder / "latents.json").write_text(json.dumps(meta))
+    return folder
 
 
 @pytest.fixture
@@ -31,14 +50,10 @@ def fake_encoder() -> FakeEncoder:
 
 
 @pytest.fixture
-def fake_dataset(tmp_path, fake_encoder):
-    """A dataset folder with 24 short episodes and fake latents."""
-    rollouts = generate(24, n_steps=3, workers=1)
-    rollouts.split[:] = 0
-    rollouts.split[:4], rollouts.split[4:8] = VAL, TEST
-    rollouts.save(tmp_path)
-    z = fake_encoder.encode_states(None, rollouts.poses.reshape(-1, 3))
-    np.save(tmp_path / "latents.npy", z.reshape(24, 4, 4, 8).numpy().astype(np.float16))
-    meta = {"encoder": "fake", "pool": 1, "shape": [24, 4, 4, 8]}
-    (tmp_path / "latents.json").write_text(json.dumps(meta))
-    return tmp_path
+def fake_dataset(tmp_path):
+    return make_fake_dataset(tmp_path / "pusht", "pusht")
+
+
+@pytest.fixture
+def fake_billiards(tmp_path):
+    return make_fake_dataset(tmp_path / "billiards", "billiards")

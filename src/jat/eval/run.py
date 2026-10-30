@@ -20,6 +20,7 @@ from jat.wm.models import WorldModel
 from jat.worlds import get_world
 from jat.worlds.base import Task
 
+# A setting may carry a tag, "wm_tool@ft": the world model registered under that tag.
 SETTINGS = ("no_tool", "wm_tool", "oracle_tool", "random")
 ModelFactory = Callable[[], tuple[object, AgentInfo]]
 
@@ -57,15 +58,17 @@ def run_one(
     setting: str,
     seed: int,
     model_factory: ModelFactory | None,
-    world_model: WorldModel | None = None,
+    world_models: dict[str, WorldModel] | None = None,
 ) -> EpisodeLog:
     if setting == "random":
         return run_random(task, seed)
-    if setting not in SETTINGS:
+    base, _, tag = setting.partition("@")
+    if base not in SETTINGS:
         raise ValueError(f"unknown setting {setting!r}; expected one of {SETTINGS}")
-    if setting == "wm_tool":
+    if base == "wm_tool":
+        world_model = (world_models or {}).get(tag)
         if world_model is None:
-            raise ValueError("wm_tool needs a trained world model")
+            raise ValueError(f"{setting} needs a trained world model")
         backend = WorldModelBackend(world_model)
     else:
         # no_tool also uses the oracle backend: only to read the current frame, never to imagine.
@@ -81,9 +84,9 @@ def run_grid(
     model_factory: ModelFactory | None,
     out_dir: Path,
     workers: int = 8,
-    world_model: WorldModel | None = None,
+    world_models: dict[str, WorldModel] | None = None,
 ) -> tuple[list[EpisodeLog], int]:
-    """Returns (all logs on disk for this grid, number of failed episodes). One world model is
+    """Returns (all logs on disk for this grid, number of failed episodes). World models are
     shared by all worker threads: inference only, no state between calls."""
     episodes_dir = out_dir / "episodes"
     episodes_dir.mkdir(parents=True, exist_ok=True)
@@ -93,7 +96,7 @@ def run_grid(
 
     failures = 0
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {pool.submit(run_one, *job, model_factory, world_model): job for job in todo}
+        futures = {pool.submit(run_one, *job, model_factory, world_models): job for job in todo}
         for i, future in enumerate(as_completed(futures), 1):
             job_id = episode_id(*futures[future])
             # One failed episode (API error, timeout) must not kill a long run. It has no log

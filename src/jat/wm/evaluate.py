@@ -1,32 +1,16 @@
-"""Offline check of the world model, no LLM: how far is the pose the LLM would read from the
-true pose, after 0, 1, 2, ... imagined pushes?
+"""Offline check of the world model, no LLM: how far is the state the LLM would read from the
+true state, after 0, 1, 2, ... imagined pushes?
 
-Horizon 0 is the translator alone on a real frame: can V-JEPA 2 latents show where the T is?
+Horizon 0 is the translator alone on a real frame: can V-JEPA 2 latents show the world's state?
+Errors come from the world's readout: px (T center, or the worst ball) and degrees (T only).
 """
-
-import math
 
 import numpy as np
 import torch
 
 from jat.wm.dataset import LatentData
-from jat.wm.models import Predictor, Translator, output_to_pose
-from jat.worlds.tblock import shape as geo
+from jat.wm.models import Predictor, Translator
 from jat.worlds.tblock.world import ANGLE_TOLERANCE, POSITION_TOLERANCE
-
-
-def pose_errors(pred: torch.Tensor, true: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:
-    """Vectorized geo.pose_error: (center distance px [N], angle difference deg [N])."""
-
-    def centers(poses):
-        x, y, theta = poses.unbind(-1)
-        cx, cy = geo.CENTER
-        c, s = torch.cos(theta), torch.sin(theta)
-        return torch.stack([x + c * cx - s * cy, y + s * cx + c * cy], -1)
-
-    distance = (centers(pred) - centers(true)).norm(dim=-1)
-    turn = torch.remainder(pred[:, 2] - true[:, 2] + math.pi, 2 * math.pi) - math.pi
-    return distance.cpu().numpy(), turn.abs().rad2deg().cpu().numpy()
 
 
 def summarize_errors(px: np.ndarray, deg: np.ndarray) -> dict:
@@ -36,20 +20,24 @@ def summarize_errors(px: np.ndarray, deg: np.ndarray) -> dict:
         "px_p90": float(np.percentile(px, 90)),
         "deg_median": float(np.median(deg)),
         "deg_p90": float(np.percentile(deg, 90)),
-        # Share of poses that would count as "at the goal" if the goal were the true pose
+        # Share of states that would count as "at the goal" if the goal were the true state
         "within_tolerance": float(np.mean((px < POSITION_TOLERANCE) & (deg < ANGLE_TOLERANCE))),
     }
 
 
 @torch.no_grad()
-def translator_errors(data: LatentData, translator: Translator, split: int) -> dict:
-    """Translator on every real frame of a split."""
+def translator_errors(
+    data: LatentData, translator: Translator, split: int, head: str | None = None
+) -> dict:
+    """Translator on every real frame of a split. `head`: read with another world's head
+    (zero-shot on an evaluation-only world)."""
+    head = head or data.world
     episodes = data.episodes(split)
     px, deg = [], []
     for t in range(data.n_steps + 1):
         steps = torch.full_like(episodes, t)
-        pred = output_to_pose(translator(data.latent(episodes, steps)))
-        a, b = pose_errors(pred, data.poses[episodes, t])
+        pred = data.readout.decode(translator(data.latent(episodes, steps), head))
+        a, b = data.readout.errors(pred, data.poses[episodes, t])
         px.append(a)
         deg.append(b)
     return summarize_errors(np.concatenate(px), np.concatenate(deg))
@@ -57,10 +45,17 @@ def translator_errors(data: LatentData, translator: Translator, split: int) -> d
 
 @torch.no_grad()
 def rollout_errors(
-    data: LatentData, predictor: Predictor, translator: Translator, split: int, batch: int = 256
+    data: LatentData,
+    predictor: Predictor,
+    translator: Translator,
+    split: int,
+    batch: int = 256,
+    head: str | None = None,
 ) -> list[dict]:
-    """One row per horizon 0..T: imagined pose vs true pose, plus the "nothing moves" baseline
-    (the start pose) for scale."""
+    """One row per horizon 0..T: imagined state vs true state, plus the "nothing moves" baseline
+    (the start state) for scale."""
+    head = head or data.world
+    errors_of = data.readout.errors
     episodes = data.episodes(split)
     n_rows = data.n_steps + 1
     # errors[guess][t] = list of (px, deg) arrays, one per chunk
@@ -71,8 +66,9 @@ def rollout_errors(
             if t > 0:
                 z = predictor(z, data.pushes[chunk, t - 1])
             true = data.poses[chunk, t]
-            errors["model"][t].append(pose_errors(output_to_pose(translator(z)), true))
-            errors["no_move"][t].append(pose_errors(data.poses[chunk, 0], true))
+            pred = data.readout.decode(translator(z, head))
+            errors["model"][t].append(errors_of(pred, true))
+            errors["no_move"][t].append(errors_of(data.poses[chunk, 0], true))
 
     def summary(guess: str, t: int) -> dict:
         px, deg = zip(*errors[guess][t], strict=True)

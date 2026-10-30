@@ -23,6 +23,7 @@ from jat.worlds.base import (
     Push,
     PushResult,
     Task,
+    ToolText,
     check_bounds,
 )
 from jat.worlds.table3d import scene as s3d
@@ -101,7 +102,15 @@ class _Run:
 class Billiards:
     name = "billiards"
     families = FAMILIES
+    readout = f"points:{len(NAMES)}"
+    model_world = "billiards"
     look = s3d.DEFAULT_LOOK
+    tool_text = ToolText(
+        ends_up="where the balls end up",
+        misses="no ball moves: the stroke misses",
+        missed="No ball moved: the stroke missed.",
+        at_goal="the red ball is at the goal",
+    )
 
     @cached_property
     def scene(self) -> s3d.Scene:

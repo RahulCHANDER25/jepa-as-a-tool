@@ -12,7 +12,7 @@ PUSHT = get_world("pusht")
 class ExactTranslator(nn.Module):
     """Reads the fake encoder's latents perfectly: the pose output sits in token 0."""
 
-    def forward(self, z):
+    def forward(self, z, world):
         return z[:, 0, :4]
 
 

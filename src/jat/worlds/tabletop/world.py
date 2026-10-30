@@ -117,4 +117,5 @@ class TabletopNewLook(Tabletop):
     never trained on."""
 
     name = "tabletop-new-look"
+    model_world = "tabletop"
     look = s3d.NEW_LOOK

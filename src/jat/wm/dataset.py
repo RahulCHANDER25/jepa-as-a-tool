@@ -7,8 +7,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from jat.wm.data import Rollouts
+from jat.wm.data import TRAIN, Rollouts
 from jat.wm.encoder import load_latents
+from jat.wm.readouts import readout
 from jat.worlds.base import TABLE
 
 
@@ -25,8 +26,13 @@ def available_ram() -> float:
 
 
 class LatentData:
-    def __init__(self, folder: Path, device: torch.device):
+    def __init__(self, folder: Path, device: torch.device, max_train: int | None = None):
+        """`max_train`: keep only the first N training episodes (label-budget experiments)."""
+        self.folder = folder
         self.rollouts = Rollouts.load(folder)
+        self.world = self.rollouts.world
+        self.readout = readout(self.world)
+        self.max_train = max_train
         latents, self.meta = load_latents(folder)
         self.device = device
         # In RAM when it fits; otherwise each batch reads the file (slower, still works).
@@ -60,7 +66,10 @@ class LatentData:
         return self.rollouts.n_steps
 
     def episodes(self, split: int) -> torch.Tensor:
-        return torch.from_numpy(np.flatnonzero(self.rollouts.split == split)).to(self.device)
+        index = np.flatnonzero(self.rollouts.split == split)
+        if split == TRAIN and self.max_train is not None:
+            index = index[: self.max_train]
+        return torch.from_numpy(index).to(self.device)
 
     def latent(self, episodes: torch.Tensor, steps: torch.Tensor) -> torch.Tensor:
         """float32 [B, P, D] on the device."""

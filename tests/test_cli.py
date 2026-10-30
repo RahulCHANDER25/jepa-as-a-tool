@@ -8,7 +8,7 @@ runner = CliRunner()
 def test_help_lists_every_pipeline_stage():
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    for command in ("gen", "encode", "train", "wm-eval", "eval", "export-web"):
+    for command in ("gen", "encode", "train", "transfer", "learn-data", "wm-eval", "eval"):
         assert command in result.output
 
 
@@ -22,6 +22,18 @@ def test_gen_writes_a_dataset(tmp_path):
 def test_wm_tool_without_a_world_model_is_refused(tmp_path):
     result = runner.invoke(app, ["eval", "--out", str(tmp_path), "--settings", "wm_tool"])
     assert result.exit_code != 0 and "--wm" in result.output
+
+
+def test_tagged_wm_tool_needs_its_tagged_world_model(tmp_path):
+    result = runner.invoke(
+        app, ["eval", "--out", str(tmp_path), "--settings", "wm_tool@ft", "--wm", "runs/wm"]
+    )
+    assert result.exit_code != 0 and "ft=" in result.output
+
+
+def test_unknown_world_is_refused(tmp_path):
+    result = runner.invoke(app, ["gen", str(tmp_path), "--world", "moon"])
+    assert result.exit_code != 0 and "unknown world" in result.output
 
 
 def test_export_web_rejects_a_model_without_a_name(tmp_path):

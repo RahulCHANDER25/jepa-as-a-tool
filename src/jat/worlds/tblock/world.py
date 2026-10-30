@@ -22,6 +22,7 @@ from jat.worlds.base import (
     Push,
     PushResult,
     Task,
+    ToolText,
     check_bounds,
 )
 from jat.worlds.tblock import shape as geo
@@ -87,6 +88,17 @@ class TWorld(ABC):
     name: str
     physics_text: str  # the "Physics:" paragraph of the system prompt
     families = FAMILIES
+    readout = "t_pose"
+    tool_text = ToolText(
+        ends_up="where the T ends up",
+        misses="the T does not move: the push misses it",
+        missed="The T did not move: the push missed it.",
+        at_goal="the T is at the goal",
+    )
+
+    @property
+    def model_world(self) -> str:
+        return self.name
 
     @abstractmethod
     def push(self, state, push: Push) -> PushResult: ...

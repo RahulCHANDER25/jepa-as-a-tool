@@ -6,6 +6,7 @@ Datasets and episode logs store states under the name `pose`, from when PushT wa
 
 import math
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Protocol
 
 import numpy as np
@@ -70,6 +71,16 @@ class Task(BaseModel):
         return get_world(self.world).goal_text(self.goal)
 
 
+@dataclass(frozen=True)
+class ToolText:
+    """The world's words in the tool's replies."""
+
+    ends_up: str  # "Predicts {ends_up} after each push"
+    misses: str  # an imagined push that moves nothing
+    missed: str  # a real push that moved nothing
+    at_goal: str  # "Call it when {at_goal}."
+
+
 class Outcome(BaseModel):
     success: bool
     position_error: float  # px
@@ -94,6 +105,9 @@ class World(Protocol):
 
     name: str
     families: Mapping[str, object]  # task families, by name
+    tool_text: ToolText
+    readout: str  # what a translator head reads: "t_pose" or "points:<n>" (jat.wm.readouts)
+    model_world: str  # whose world model this world uses: its own name, unless evaluation only
 
     def push(self, state, push: Push) -> PushResult:
         """Run one push and wait until everything is at rest."""
