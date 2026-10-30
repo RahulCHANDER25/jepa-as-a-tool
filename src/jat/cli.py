@@ -205,11 +205,21 @@ def eval_(
 
 @app.command()
 def report(run: Annotated[Path, typer.Argument(help="Run folder written by `jat eval`.")]) -> None:
-    """Print the success table of a finished run."""
-    from jat.eval.metrics import format_table, summarize
+    """Print the success table of a finished run, then each tool setting against no tool on the
+    same tasks."""
+    from jat.eval.metrics import format_paired, format_table, paired, summarize
     from jat.eval.run import load_logs
 
-    typer.echo(format_table(summarize(load_logs(run))))
+    logs = load_logs(run)
+    typer.echo(format_table(summarize(logs)))
+    settings = {log.setting for log in logs}
+    if "no_tool" in settings:
+        rows = [
+            row
+            for setting in sorted(settings - {"no_tool"})
+            for row in paired(logs, "no_tool", setting)
+        ]
+        typer.echo("\n" + format_paired(rows))
 
 
 @app.command(name="export-web")
