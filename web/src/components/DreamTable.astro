@@ -1,0 +1,61 @@
+---
+// Dream mode: push the T yourself, the V-JEPA 2 world model imagines the result in your
+// browser. `worlds`: bundles in web/public/dream/<world>, written by `jat export-dream`.
+interface Props {
+  worlds?: string[];
+}
+const { worlds = ["pusht"] } = Astro.props;
+---
+
+<figure class="dream" data-dream data-worlds={worlds.join(",")}>
+  <div class="stage">
+    <canvas role="img" aria-label="A table: drag on it to push; the world model draws what it imagines"></canvas>
+    <button type="button" class="wake" data-wake>Wake the world model</button>
+  </div>
+  <p class="caption" data-status aria-live="polite">
+    Runs the predictor and the translator in your browser. Nothing is sent anywhere.
+  </p>
+  <div class="controls">
+    <button type="button" data-back>↺ Back to the start</button>
+    <button type="button" data-next>Next start ›</button>
+    {worlds.length > 1 && worlds.map((w) => <button type="button" data-world={w}>{w}</button>)}
+  </div>
+</figure>
+
+<style>
+  .dream {
+    max-width: 520px;
+    margin: 1.5rem auto;
+  }
+  .dream canvas {
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .dream .wake {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: max-content;
+    height: max-content;
+    padding: 12px 20px;
+    font-size: 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .dream.awake .wake {
+    display: none;
+  }
+  .dream .controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+</style>
+
+<script>
+  import { mountDreams } from "../lib/dream";
+  mountDreams();
+</script>

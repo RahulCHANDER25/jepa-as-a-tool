@@ -28,7 +28,7 @@ export interface Ghost {
 }
 
 export interface Scene {
-  goal: Pose;
+  goal?: Pose;
   real: Pose;
   ghosts: Ghost[];
   showTruth: boolean;
@@ -120,15 +120,17 @@ export function drawScene(canvas: HTMLCanvasElement, scene: Scene) {
   }
 
   // goal: soft fill + outline
-  tracePolygon(ctx, scene.goal);
-  ctx.globalAlpha = 0.22;
-  ctx.fillStyle = c.goal;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = c.goal;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([]);
-  ctx.stroke();
+  if (scene.goal) {
+    tracePolygon(ctx, scene.goal);
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = c.goal;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = c.goal;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.stroke();
+  }
 
   // real T under the ghosts, so ghosts that overlap it stay visible
   tracePolygon(ctx, scene.real);

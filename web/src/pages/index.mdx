@@ -18,6 +18,7 @@ import ResultsChart from "../components/ResultsChart.astro";
 import HorizonChart from "../components/HorizonChart.astro";
 import Pipeline from "../components/Pipeline.astro";
 import Success from "../components/Success.astro";
+import DreamTable from "../components/DreamTable.astro";
 
 <div class="hero">
   <EpisodePlayer episode="rotate-0-012__wm_tool__s0" compact autoplay />
@@ -68,6 +69,13 @@ Every frame of one episode. Real frames form the trunk; imagined frames branch o
 frames are pushes the agent imagined and then ran for real.
 
 <ImaginationTree episode="rotate-0-012__wm_tool__s0" />
+
+## Dream with it
+
+Your turn. Drag on the table to push the T: the world model imagines where it goes, in your
+browser. Each push starts from the last imagined one, so you can follow a whole dream.
+
+<DreamTable />
 
 ## Results
 
