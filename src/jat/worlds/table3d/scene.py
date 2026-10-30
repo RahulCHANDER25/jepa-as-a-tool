@@ -113,8 +113,24 @@ def _rim(height: float) -> str:
     return "\n    ".join(parts)
 
 
+def ghost_bodies(geoms: str, n_objects: int, slots: int) -> str:
+    """See-through copies of the objects for clips: `slots` x `n_objects` mocap bodies named
+    ghost<slot>_<object>, that touch nothing. They come after the pusher: it keeps mocap 0."""
+    geoms = geoms.replace("<geom ", '<geom contype="0" conaffinity="0" ')
+    return "".join(
+        f'<body name="ghost{s}_{k}" mocap="true" pos="0 0 -1">{geoms}</body>'
+        for s in range(slots)
+        for k in range(n_objects)
+    )
+
+
 def scene_xml(
-    objects: str, look: Look, timestep: float, rim_class: str = "", rim_height: float = RIM_HEIGHT
+    objects: str,
+    look: Look,
+    timestep: float,
+    rim_class: str = "",
+    rim_height: float = RIM_HEIGHT,
+    ghosts: str = "",
 ) -> str:
     """A full MJCF model: the table, `objects` (bodies placed on it) and the parked pusher.
     `rim_class` holds extra attributes for the rim geoms (billiards: bouncy cushions); the rim
@@ -154,6 +170,7 @@ def scene_xml(
             rgba="0.9 0.9 0.9 1" friction="0.3 0.005 0.0001"
             solref="0.004 1" solimp="0.95 0.99 0.001"/>
     </body>
+    {ghosts}
   </worldbody>
 </mujoco>
 """

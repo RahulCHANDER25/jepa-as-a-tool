@@ -248,6 +248,20 @@ def export_dream(
     )
 
 
+@app.command()
+def clip(
+    episode: Annotated[Path, typer.Argument(help="Episode log of a 3D world (.json).")],
+    out: Annotated[Path, typer.Option(help="Video file, e.g. clips/rotate.mp4.")],
+    size: int = 512,
+) -> None:
+    """A 3D episode as a video: the imagined plans, the chosen one in green, the real push."""
+    from jat.agent.episode_log import EpisodeLog
+    from jat.clip import render_clip
+
+    log = EpisodeLog.model_validate_json(episode.read_text())
+    typer.echo(f"{render_clip(log, out, size)}")
+
+
 @app.command(name="wm-eval")
 def wm_eval(
     data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],

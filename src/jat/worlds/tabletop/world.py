@@ -28,18 +28,25 @@ little after the pusher leaves it, then stops. A push whose line passes off the 
 gravity rotates the T as well as moving it. The table has a rim on all four sides."""
 
 
-def _t_body(rgba: str) -> str:
-    h = HEIGHT / 2
+def _t_geoms(rgba: str, names: bool = True) -> str:
     # Geoms in the body frame: origin = the middle of the bar's top edge; local y (screen,
-    # downward) is -Y. The center of mass sits where PushT puts it: 45 mm down the stem.
+    # downward) is -Y.
+    h = HEIGHT / 2
+    bar, stem = ('name="bar" ', 'name="stem" ') if names else ("", "")
+    return f"""
+      <geom {bar}type="box" pos="0 -0.015 {h}" size="0.06 0.015 {h}" rgba="{rgba}"
+            friction="0.3 0.005 0.0001"/>
+      <geom {stem}type="box" pos="0 -0.075 {h}" size="0.015 0.045 {h}" rgba="{rgba}"
+            friction="0.3 0.005 0.0001"/>"""
+
+
+def _t_body(rgba: str) -> str:
+    # The center of mass sits where PushT puts it: 45 mm down the stem.
     return f"""
     <body name="T" pos="0 0 0">
       <freejoint name="T"/>
-      <inertial pos="0 -0.045 {h}" mass="0.1" diaginertia="0.00012 0.00009 0.000195"/>
-      <geom name="bar" type="box" pos="0 -0.015 {h}" size="0.06 0.015 {h}" rgba="{rgba}"
-            friction="0.3 0.005 0.0001"/>
-      <geom name="stem" type="box" pos="0 -0.075 {h}" size="0.015 0.045 {h}" rgba="{rgba}"
-            friction="0.3 0.005 0.0001"/>
+      <inertial pos="0 -0.045 {HEIGHT / 2}" mass="0.1" diaginertia="0.00012 0.00009 0.000195"/>
+      {_t_geoms(rgba)}
     </body>"""
 
 
@@ -48,9 +55,22 @@ class Tabletop(TWorld):
     physics_text = _PHYSICS
     look = s3d.DEFAULT_LOOK
 
+    goal_objects = (0,)  # for clips: the objects the goal is about
+
     @cached_property
     def scene(self) -> s3d.Scene:
-        return s3d.Scene(s3d.scene_xml(_t_body(self.look.object_rgba), self.look, TIMESTEP))
+        return self.clip_scene(0)
+
+    def clip_scene(self, slots: int) -> s3d.Scene:
+        """The scene, plus `slots` ghost T's for clips."""
+        ghosts = s3d.ghost_bodies(_t_geoms("1 1 1 0.3", names=False), 1, slots)
+        xml = s3d.scene_xml(_t_body(self.look.object_rgba), self.look, TIMESTEP, ghosts=ghosts)
+        return s3d.Scene(xml)
+
+    @staticmethod
+    def poses(state) -> list[tuple[list[float], np.ndarray]]:
+        """(position, quaternion) of each object's body."""
+        return [([*s3d.to_world(state[0], state[1]), 0.0], s3d.yaw_quat(state[2]))]
 
     def _place(self, data, pose) -> None:
         X, Y = s3d.to_world(pose[0], pose[1])

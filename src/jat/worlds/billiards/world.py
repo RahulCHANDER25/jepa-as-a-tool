@@ -112,13 +112,26 @@ class Billiards:
         at_goal="the red ball is at the goal",
     )
 
+    goal_objects = (1,)  # for clips: the goal is the red ball's
+
     @cached_property
     def scene(self) -> s3d.Scene:
+        return self.clip_scene(0)
+
+    def clip_scene(self, slots: int) -> s3d.Scene:
+        """The scene, plus `slots` ghost pairs of balls for clips."""
         objects = _ball("white", "0.95 0.95 0.92 1") + _ball("red", self.look.second_rgba)
+        geom = f'<geom type="sphere" size="{RADIUS * s3d.MM}" rgba="1 1 1 0.3"/>'
         xml = s3d.scene_xml(
-            objects, self.look, TIMESTEP, rim_class=_CUSHION_CONTACT, rim_height=CUSHION_HEIGHT
-        )
+            objects, self.look, TIMESTEP, rim_class=_CUSHION_CONTACT, rim_height=CUSHION_HEIGHT,
+            ghosts=s3d.ghost_bodies(geom, len(NAMES), slots),
+        )  # fmt: skip
         return s3d.Scene(xml)
+
+    def poses(self, state) -> list[tuple[list[float], np.ndarray]]:
+        """(position, quaternion) of each object's body."""
+        r = RADIUS * s3d.MM
+        return [([*s3d.to_world(x, y), r], np.array([1.0, 0, 0, 0])) for x, y in self._balls(state)]
 
     @cached_property
     def _geoms(self) -> dict[str, int]:
