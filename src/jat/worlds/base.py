@@ -74,7 +74,7 @@ class Outcome(BaseModel):
     success: bool
     position_error: float  # px
     angle_error: float  # degrees
-    coverage: float
+    coverage: float | None = None  # T worlds: share of the goal T covered
 
 
 def check_bounds(push: Push) -> str | None:

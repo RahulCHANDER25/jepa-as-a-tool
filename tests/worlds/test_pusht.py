@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from jat.worlds import get_world
-from jat.worlds.base import Push
-from jat.worlds.pusht.world import END_TOLERANCE, JAM_DEPTH, STEP_PX, PushT, _penetration, _Table
+from jat.worlds.base import PUSHER_RADIUS, Push
+from jat.worlds.pusht.world import END_TOLERANCE, JAM_DEPTH, STEP_PX, PushT, _Table
 from jat.worlds.tblock import shape as geo
 
 CENTERED = [256.0, 200.0, 0.0]  # upright T in the middle: bar y 200..230, stem down to 320
@@ -70,7 +70,7 @@ def test_push_stops_when_t_is_pinned_against_a_wall():
     result = PUSHT.push(pinned, Push(start=(200.0, 256.0), end=(60.0, 256.0)))
     assert result.jammed
     last = result.trajectory[-1]
-    assert _penetration(last[2:], last[:2]) < JAM_DEPTH + STEP_PX
+    assert geo.penetration(last[2:], last[:2], PUSHER_RADIUS) < JAM_DEPTH + STEP_PX
     assert geo.pose_error(result.state, pinned)[0] < 5.0
 
 

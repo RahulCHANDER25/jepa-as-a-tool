@@ -13,6 +13,9 @@ from jat.worlds.base import World
 # name -> "module:class". Imported on first use: each world pulls in its own simulator.
 _WORLDS = {
     "pusht": "jat.worlds.pusht.world:PushT",
+    "tabletop": "jat.worlds.tabletop.world:Tabletop",
+    "tabletop-new-look": "jat.worlds.tabletop.world:TabletopNewLook",
+    "billiards": "jat.worlds.billiards.world:Billiards",
 }
 WORLDS = tuple(_WORLDS)
 

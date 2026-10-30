@@ -36,15 +36,6 @@ A push whose line passes off the center of gravity rotates the T as well as movi
 The table has walls on all four sides."""
 
 
-def _penetration(pose, point) -> float:
-    """How deep the pusher disc at `point` sinks into the T, in px (<= 0: no overlap)."""
-    polygon = geo.t_polygon(pose)
-    p = geo.Point(point)
-    if polygon.contains(p):
-        return PUSHER_RADIUS + polygon.exterior.distance(p)
-    return PUSHER_RADIUS - polygon.distance(p)
-
-
 class _Table:
     """One gym-pusht simulator. Not thread-safe: PushT keeps one per thread."""
 
@@ -88,7 +79,7 @@ class _Table:
             pose = self.pose()
             pusher = (agent.position.x, agent.position.y)
             trajectory.append((*pusher, *pose))
-            if _penetration(pose, pusher) > JAM_DEPTH:
+            if geo.penetration(pose, pusher, PUSHER_RADIUS) > JAM_DEPTH:
                 jammed = True
                 break
             if i >= n_move - 1 and math.dist(pusher, push.end) < END_TOLERANCE:

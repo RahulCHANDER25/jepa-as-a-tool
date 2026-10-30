@@ -68,6 +68,15 @@ def distance_to_t(pose, point) -> float:
     return t_polygon(pose).distance(Point(point))
 
 
+def penetration(pose, point, radius: float) -> float:
+    """How deep a disc of `radius` at `point` sinks into the T, in px (<= 0: no overlap)."""
+    polygon = t_polygon(pose)
+    p = Point(point)
+    if polygon.contains(p):
+        return radius + polygon.exterior.distance(p)
+    return radius - polygon.distance(p)
+
+
 def coverage(pose, goal) -> float:
     """Share of the goal T's area covered by the T: PushT's native success metric."""
     goal_poly = t_polygon(goal)
