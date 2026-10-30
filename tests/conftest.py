@@ -1,4 +1,9 @@
 import json
+import os
+
+# Plain CLI output in tests: on GitHub Actions typer colors it, and the color codes split
+# option names like "--wm". Set before typer is first imported.
+os.environ["_TYPER_FORCE_DISABLE_TERMINAL"] = "1"
 
 import numpy as np
 import pytest
