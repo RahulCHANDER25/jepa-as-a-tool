@@ -213,20 +213,24 @@ def pipeline(
 def mcp(
     world: str = typer.Option("pusht", help=WORLD_HELP),
     wm: Annotated[
-        Path | None,
-        typer.Option(help="World model run folder. Without it, imagination is the real physics."),
+        str | None,
+        typer.Option(
+            help="World model run folder or hf:<owner>/<repo>/<run>. Without it, imagination "
+            "is the real physics."
+        ),
     ] = None,
 ) -> None:
     """Serve the tools over MCP (stdio), for Claude Desktop, Cursor or any MCP client."""
+    from jat.hub import resolve_run
     from jat.mcp_server import Game, build_server
 
     _world(world)
-    build_server(Game(world, wm)).run("stdio")
+    build_server(Game(world, resolve_run(wm) if wm else None)).run("stdio")
 
 
 @app.command(name="export-dream")
 def export_dream(
-    wm: Annotated[Path, typer.Option(help="World model run folder.")],
+    wm: Annotated[str, typer.Option(help="World model run folder or hf:<owner>/<repo>/<run>.")],
     out: Annotated[Path, typer.Option(help="Folder for the browser, e.g. web/public/dream/pusht.")],
     starts: int = typer.Option(12, help="Start states, taken from the world's evaluation tasks."),
 ) -> None:
@@ -234,10 +238,11 @@ def export_dream(
     latents of a few start states."""
     from itertools import cycle, islice
 
+    from jat.hub import resolve_run
     from jat.wm.dream import export_dream as export
     from jat.wm.models import WorldModel
 
-    world_model = WorldModel.load(wm)
+    world_model = WorldModel.load(resolve_run(wm))
     families = list(islice(cycle(world_model.world.families), starts))
     states = [world_model.world.sample_task(f, 0, i).start for i, f in enumerate(families)]
     manifest = export(world_model, states, out)
@@ -260,6 +265,24 @@ def clip(
 
     log = EpisodeLog.model_validate_json(episode.read_text())
     typer.echo(f"{render_clip(log, out, size)}")
+
+
+@app.command()
+def publish(
+    runs: Annotated[list[str], typer.Argument(help="name=folder, e.g. tabletop=runs/tabletop.")],
+    repo: Annotated[str, typer.Option(help="Hugging Face model repo, <owner>/<name>.")],
+    private: bool = False,
+) -> None:
+    """Upload trained runs (model files only) to the Hugging Face Hub. Needs HF_TOKEN."""
+    from jat.hub import publish as upload
+
+    folders = {}
+    for item in runs:
+        name, sep, folder = item.partition("=")
+        if not sep:
+            raise typer.BadParameter(f"expected name=folder, got {item!r}")
+        folders[name] = Path(folder)
+    typer.echo(upload(repo, folders, private))
 
 
 @app.command(name="wm-eval")
@@ -320,10 +343,12 @@ def eval_(
     w = _world(world)
     task_list = [w.sample_task(f, task_seed, i) for f in _csv(families) for i in range(n)]
     setting_list = _csv(settings)
+    from jat.hub import resolve_run
+
     folders = {}
     for item in wm:
         tag, sep, folder = item.rpartition("=")
-        folders[tag if sep else ""] = Path(folder)
+        folders[tag if sep else ""] = resolve_run(folder)
     world_models = {}
     for setting in setting_list:
         base, _, tag = setting.partition("@")

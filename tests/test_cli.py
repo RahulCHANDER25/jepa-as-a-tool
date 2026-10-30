@@ -39,3 +39,13 @@ def test_unknown_world_is_refused(tmp_path):
 def test_export_web_rejects_a_model_without_a_name(tmp_path):
     result = runner.invoke(app, ["export-web", "--run", str(tmp_path), "--wm", "runs/wm"])
     assert result.exit_code != 0 and "name=folder" in result.output
+
+
+def test_a_local_run_folder_resolves_to_itself_and_hub_paths_need_a_run(tmp_path):
+    import pytest
+
+    from jat.hub import resolve_run
+
+    assert resolve_run(tmp_path) == tmp_path
+    with pytest.raises(ValueError, match="hf:<owner>/<repo>/<run>"):
+        resolve_run("hf:someone/repo")

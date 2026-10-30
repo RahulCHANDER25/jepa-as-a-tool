@@ -70,23 +70,66 @@ cp .env.example .env                        # then set META_API_KEY
 
 Interrupted evaluations resume: finished episodes are skipped.
 
+**All four worlds in one run:** [`notebooks/overnight.ipynb`](notebooks/overnight.ipynb) (Kaggle,
+2 × T4, ~8–9 h) trains the tabletop and billiards world models, the shared translator and the
+transfer test, fine-tunes PushT on the agent's own imagined pushes, and runs every evaluation.
+`uv run jat pipeline --work /tmp/dry --size small --provider dry --wm-v2 runs/wm-v2 --eval-v2
+results/eval-wm-v2` runs the same stages at toy sizes on a CPU, with a scripted agent: no GPU, no API.
+
+## Worlds
+
+| World | Physics | Trained? |
+|---|---|---|
+| `pusht` | gym-pusht, 2D, no momentum | yes |
+| `tabletop` | MuJoCo, 3D camera, the T has mass and slides | yes |
+| `billiards` | MuJoCo, a white and a red ball, a cue; balls roll and bounce off the cushions | yes |
+| `tabletop-new-look` | the tabletop's physics, another table, light, color and camera | no: evaluated with the tabletop's model |
+
+One translator reads them all: a shared trunk on V-JEPA 2's latents, and one small head per world.
+**Adding a world** is one folder and one line: see [docs/add-a-world.md](docs/add-a-world.md).
+
+## Use it from any agent (MCP)
+
+```bash
+uv run jat mcp --world billiards --wm runs/billiards     # or --wm hf:<owner>/<repo>/billiards
+```
+
+In Claude Desktop's `claude_desktop_config.json` (or any MCP client):
+
+```json
+{
+  "mcpServers": {
+    "jepa-billiards": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/jepa-as-a-tool", "jat", "mcp", "--world", "billiards", "--wm", "runs/billiards"]
+    }
+  }
+}
+```
+
+Four tools: `start_task`, `simulate`, `act`, `done`. Each reply is the text our agent reads plus a
+top view of the table with the imagined states.
+
 ## Repository
 
 | Folder | Content |
 |---|---|
-| `src/jat/worlds` | one folder per world (physics, frames, rules, tasks); `tblock` holds what the T worlds share |
-| `src/jat/wm` | data generator, V-JEPA 2 encoding, predictor, translator, training, evaluation |
-| `src/jat/tool` | the `simulate` tool, frame handles, oracle and world-model backends |
+| `src/jat/worlds` | one folder per world (physics, frames, rules, tasks); `tblock`: what the T worlds share; `table3d`: the MuJoCo table |
+| `src/jat/wm` | data generator, V-JEPA 2 encoding, predictor, translator (trunk + heads), readouts, training, transfer test, ONNX export |
+| `src/jat/tool` | the `simulate` tool, frame handles, oracle and world-model backends, top-view sketches |
 | `src/jat/agent` | prompts, LLM client, agent loop, episode logs |
-| `src/jat/eval` | evaluation grid, metrics, website export |
-| `notebooks` | GPU training and the full evaluation, for Kaggle or Colab |
-| `web` | the website (Astro), built from the exported episode logs |
+| `src/jat/eval` | evaluation grid, metrics, website export, learning from use |
+| `src/jat/pipeline.py`, `mcp_server.py`, `clip.py`, `hub.py` | the overnight run, the MCP server, 3D videos, Hugging Face upload and download |
+| `notebooks` | GPU training and the evaluations, for Kaggle or Colab |
+| `web` | the website (Astro): episode player, dream mode |
 
 ## Built during the hackathon
 
 Everything in this repository was written between Oct 27 and Nov 4, 2026: the push action on top
 of `gym-pusht`, the task families, the `simulate` tool and agent loop, the data generator, the
-V-JEPA 2 encoding, the predictor and translator, the evaluation and the website.
+V-JEPA 2 encoding, the predictor and translator, the evaluation and the website; then the three
+MuJoCo worlds, the shared translator and transfer test, learning from use, the overnight pipeline,
+the MCP server, dream mode and the 3D clips.
 
 **Meta models used:** V-JEPA 2 (ViT-L) as the frozen encoder; Muse Spark 1.3 as the agent, through
 the Meta Model API.
