@@ -1,9 +1,9 @@
 import mdx from "@astrojs/mdx";
 import { defineConfig } from "astro/config";
 
-// GitHub Pages serves the site under /<repo>/
+// The site lives at the root. GitHub Pages serves it under /<repo>/: the pages workflow passes
+// that prefix with `astro build --base`.
 export default defineConfig({
   site: "https://rahulchander25.github.io",
-  base: "/jepa-as-a-tool",
   integrations: [mdx()],
 });

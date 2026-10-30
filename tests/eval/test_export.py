@@ -25,5 +25,7 @@ def test_export_replaces_episodes_of_an_older_run(tmp_path):
     run_grid([sample_task("rotate", 0, 0)], ["random"], [0], None, run, workers=1)
     (out / "episodes").mkdir(parents=True)
     (out / "episodes" / "stale.json").write_text("{}")
+    folder = (out / "episodes").stat().st_ino
     export_web(run, {}, out)
     assert not (out / "episodes" / "stale.json").exists()
+    assert (out / "episodes").stat().st_ino == folder  # same folder, not recreated

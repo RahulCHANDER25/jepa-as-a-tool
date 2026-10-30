@@ -2,7 +2,6 @@
 files the static site fetches. Episodes are copied whole; the site loads one only when shown."""
 
 import json
-import shutil
 from pathlib import Path
 
 from jat.agent.episode_log import EpisodeLog
@@ -55,8 +54,11 @@ def export_web(run: Path, models: dict[str, Path], out: Path) -> int:
     (out / "horizon.json").write_text(json.dumps({"models": horizon}, indent=1))
 
     episodes = out / "episodes"
-    shutil.rmtree(episodes, ignore_errors=True)  # generated: drop episodes of an older run
-    episodes.mkdir()
+    episodes.mkdir(exist_ok=True)
+    # Drop episodes of an older run, but keep the folder: a running dev server stops serving a
+    # folder that is deleted and recreated under it.
+    for old in episodes.glob("*.json"):
+        old.unlink()
     for log in logs:
         (episodes / f"{log.episode_id}.json").write_text(log.model_dump_json())
     index = [_index_entry(log) for log in logs]
