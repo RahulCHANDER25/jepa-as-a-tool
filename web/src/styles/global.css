@@ -22,6 +22,7 @@
   --t-real: #778899;
   --goal: #2e9b3e;
   --ghost: #2a78d6;
+  --chosen: #16b84a;
   --truth: #2a2a28;
   --pusher: #eb6834;
   --meta: #2a78d6;
@@ -47,6 +48,7 @@
   --t-real: #8d9cab;
   --goal: #34b04a;
   --ghost: #4f97ec;
+  --chosen: #3fe07a;
   --truth: #e6e4dc;
   --pusher: #d95926;
   --meta: #3987e5;
@@ -182,6 +184,33 @@ figcaption {
   border: 1px solid var(--border);
   --grid: var(--table-grid);
 }
+.stage {
+  position: relative;
+}
+/* The agent's sentence, over the top of the table */
+.stage .thought {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface, #fff) 88%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.12);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: var(--text);
+  pointer-events: none;
+}
+.stage .thought::before {
+  content: "💭 ";
+}
+.compact .stage .thought {
+  font-size: 0.8rem;
+  padding: 6px 10px;
+}
 .stage .caption {
   margin: 8px 0 0;
   min-height: 3.2em;
@@ -307,6 +336,11 @@ figcaption {
 .k-ghost {
   background: color-mix(in srgb, var(--ghost) 28%, transparent);
   border: 2px solid var(--ghost);
+}
+.k-chosen {
+  background: color-mix(in srgb, var(--chosen) 40%, transparent);
+  border: 2px solid var(--chosen);
+  box-shadow: 0 0 6px var(--chosen);
 }
 .k-truth {
   border: 2px dashed var(--truth);

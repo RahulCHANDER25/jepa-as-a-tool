@@ -45,7 +45,8 @@ export interface Episode {
 export type Step =
   | { kind: "start"; real: string; caption: string }
   | { kind: "imagine"; real: string; from: string; frames: string[]; caption: string; detail: string }
-  | { kind: "act"; real: string; previous: string; caption: string; detail: string }
+  | { kind: "choose"; real: string; chosen: string; candidates: string[]; caption: string; detail: string }
+  | { kind: "act"; real: string; previous: string; chosen?: string; caption: string; detail: string }
   | { kind: "note"; real: string; caption: string; detail: string }
   | { kind: "end"; real: string; caption: string; detail: string };
 
@@ -73,7 +74,27 @@ export function goalText(goal: Pose): string {
   return `Move the T to the green outline: center (${Math.round(cx)}, ${Math.round(cy)}), angle ${degrees}°.`;
 }
 
-/** One step per tool call, in order. The LLM's message rides on its turn's first call. */
+const samePush = (a: Push, b: Push) =>
+  Math.hypot(a.start[0] - b.start[0], a.start[1] - b.start[1]) +
+  Math.hypot(a.end[0] - b.end[0], a.end[1] - b.end[1]);
+
+/** The imagined push from real frame `real` that the real push repeats: the plan the agent
+ * picked. Candidates are every first push it imagined from that frame. */
+export function chosenPlan(
+  episode: Episode,
+  real: string,
+  push: Push,
+): { chosen: string; candidates: string[] } | null {
+  const candidates = episode.frames.filter((f) => f.kind === "imagined" && f.parent === real && f.push);
+  let best: Frame | null = null;
+  for (const f of candidates) {
+    if (samePush(f.push!, push) < (best ? samePush(best.push!, push) : 20)) best = f;
+  }
+  return best ? { chosen: best.id, candidates: candidates.map((f) => f.id) } : null;
+}
+
+/** One step per tool call, in order. The LLM's message rides on its turn's first call. Before
+ * each real push, a "choose" step shows which imagined plan the push repeats. */
 export function buildSteps(episode: Episode): Step[] {
   const frames = frameMap(episode);
   let real = "R0";
@@ -101,12 +122,26 @@ export function buildSteps(episode: Episode): Step[] {
       } else if (call.name === "act") {
         const next = call.result.match(/Current real frame: (R\d+)/)?.[1];
         if (next && frames.has(next)) {
+          const push = frames.get(next)!.push!;
+          const pick = chosenPlan(episode, real, push);
+          if (pick) {
+            const n = pick.candidates.length;
+            steps.push({
+              kind: "choose",
+              real,
+              ...pick,
+              caption,
+              detail: `picks ${pick.chosen}, one of ${n} push${n === 1 ? "" : "es"} it imagined from ${real}`,
+            });
+            caption = "";
+          }
           steps.push({
             kind: "act",
             real: next,
             previous: real,
+            chosen: pick?.chosen,
             caption,
-            detail: `real push ${pushText(frames.get(next)!.push!)}`,
+            detail: `real push ${pushText(push)}`,
           });
           real = next;
         } else {

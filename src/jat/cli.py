@@ -177,15 +177,74 @@ def transfer(
 def learn_data(
     out: Annotated[Path, typer.Argument(help="Dataset folder to write; then `jat encode` it.")],
     runs: Annotated[list[Path], typer.Option("--run", help="Evaluation run folder(s).")],
+    limit: Annotated[int | None, typer.Option(help="Keep a random subset (dry runs).")] = None,
 ) -> None:
     """Learning from use: the agent's imagined pushes and their true results, as a dataset."""
     from jat.eval.learn import transitions
 
-    rollouts = transitions(runs)
+    rollouts = transitions(runs, limit=limit)
     rollouts.save(out)
     typer.echo(
         f"{rollouts.n_episodes} one-push episodes ({rollouts.world}) -> {out / 'rollouts.npz'}  "
         f"(something moved in {rollouts.moved.mean():.0%})"
+    )
+
+
+@app.command()
+def pipeline(
+    work: Annotated[Path, typer.Option(help="Folder for data, runs, results and logs.")],
+    size: str = typer.Option("full", help="full | small (toy sizes, for a dry run)."),
+    wm_v2: Annotated[Path | None, typer.Option(help="PushT world model v2 run folder.")] = None,
+    eval_v2: Annotated[Path | None, typer.Option(help="PushT v2 evaluation folder.")] = None,
+    pusht_data: Annotated[
+        Path | None, typer.Option(help="PushT dataset with latents; generated if absent.")
+    ] = None,
+    gpus: int = typer.Option(0, help="GPUs to spread GPU steps over (0: CPU)."),
+    provider: str = typer.Option("meta", help="meta | dry (scripted agent, no API)."),
+    eval_workers: int = 6,
+) -> None:
+    """The whole overnight run, stage after stage. See notebooks/overnight.ipynb."""
+    from jat.pipeline import Pipeline
+
+    Pipeline(work, size, wm_v2, eval_v2, pusht_data, gpus, provider, eval_workers).run_all()
+
+
+@app.command()
+def mcp(
+    world: str = typer.Option("pusht", help=WORLD_HELP),
+    wm: Annotated[
+        Path | None,
+        typer.Option(help="World model run folder. Without it, imagination is the real physics."),
+    ] = None,
+) -> None:
+    """Serve the tools over MCP (stdio), for Claude Desktop, Cursor or any MCP client."""
+    from jat.mcp_server import Game, build_server
+
+    _world(world)
+    build_server(Game(world, wm)).run("stdio")
+
+
+@app.command(name="export-dream")
+def export_dream(
+    wm: Annotated[Path, typer.Option(help="World model run folder.")],
+    out: Annotated[Path, typer.Option(help="Folder for the browser, e.g. web/public/dream/pusht.")],
+    starts: int = typer.Option(12, help="Start states, taken from the world's evaluation tasks."),
+) -> None:
+    """Dream mode: the predictor and translator as ONNX for the browser, with V-JEPA 2
+    latents of a few start states."""
+    from itertools import cycle, islice
+
+    from jat.wm.dream import export_dream as export
+    from jat.wm.models import WorldModel
+
+    world_model = WorldModel.load(wm)
+    families = list(islice(cycle(world_model.world.families), starts))
+    states = [world_model.world.sample_task(f, 0, i).start for i, f in enumerate(families)]
+    manifest = export(world_model, states, out)
+    check = manifest["check"]
+    typer.echo(
+        f"{len(states)} starts -> {out}; ONNX vs PyTorch over {check['pushes']} imagined pushes: "
+        f"median {check['median_px_gap']:.2f} px apart, at most {check['max_px_gap']:.2f} px"
     )
 
 
@@ -258,10 +317,11 @@ def eval_(
             continue
         if tag not in folders:
             raise typer.BadParameter(f"{setting} needs --wm {tag + '=' if tag else ''}<run folder>")
+        from jat.wm.encoder import default_device
         from jat.wm.models import WorldModel
 
         # Rendered with the task's world: an evaluation-only world uses another world's model.
-        world_models[tag] = WorldModel.load(folders[tag], world=w.name)
+        world_models[tag] = WorldModel.load(folders[tag], default_device(), world=w.name)
         if world_models[tag].head != w.model_world:
             raise typer.BadParameter(
                 f"{folders[tag]} was trained on {world_models[tag].head!r}; "

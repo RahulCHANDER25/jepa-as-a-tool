@@ -22,6 +22,8 @@ export interface Ghost {
   truth?: Pose; // where the real physics puts it
   label?: string;
   strong?: boolean; // the frame in focus; others are drawn fainter
+  chosen?: boolean; // the imagined plan the agent picked: drawn green
+  alpha?: number; // 0..1, for fading in and out
   push?: { start: Point; end: Point };
 }
 
@@ -35,7 +37,10 @@ export interface Scene {
   realPush?: { start: Point; end: Point };
 }
 
-type Colors = Record<"table" | "grid" | "real" | "goal" | "ghost" | "truth" | "pusher" | "ink", string>;
+type Colors = Record<
+  "table" | "grid" | "real" | "goal" | "ghost" | "chosen" | "truth" | "pusher" | "ink",
+  string
+>;
 
 function colors(canvas: HTMLCanvasElement): Colors {
   const style = getComputedStyle(canvas);
@@ -46,6 +51,7 @@ function colors(canvas: HTMLCanvasElement): Colors {
     real: v("--t-real"),
     goal: v("--goal"),
     ghost: v("--ghost"),
+    chosen: v("--chosen"),
     truth: v("--truth"),
     pusher: v("--pusher"),
     ink: v("--text-secondary"),
@@ -129,16 +135,26 @@ export function drawScene(canvas: HTMLCanvasElement, scene: Scene) {
   ctx.fillStyle = c.real;
   ctx.fill();
 
-  for (const g of scene.ghosts) {
-    if (g.push) arrow(ctx, g.push.start, g.push.end, c.ghost, g.strong ? 2 : 1.25);
+  // the chosen plan last, on top of the others
+  const ghosts = [...scene.ghosts.filter((g) => !g.chosen), ...scene.ghosts.filter((g) => g.chosen)];
+  for (const g of ghosts) {
+    const color = g.chosen ? c.chosen : c.ghost;
+    const fade = g.alpha ?? 1;
+    ctx.globalAlpha = fade;
+    if (g.push) arrow(ctx, g.push.start, g.push.end, color, g.chosen ? 3 : g.strong ? 2 : 1.25);
     tracePolygon(ctx, g.pose);
-    ctx.globalAlpha = g.strong ? 0.28 : 0.12;
-    ctx.fillStyle = c.ghost;
+    ctx.globalAlpha = fade * (g.chosen ? 0.4 : g.strong ? 0.28 : 0.12);
+    ctx.fillStyle = color;
     ctx.fill();
-    ctx.globalAlpha = g.strong ? 1 : 0.6;
-    ctx.strokeStyle = c.ghost;
-    ctx.lineWidth = g.strong ? 2 : 1.25;
+    ctx.globalAlpha = fade * (g.strong || g.chosen ? 1 : 0.6);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = g.chosen ? 3.5 : g.strong ? 2 : 1.25;
+    if (g.chosen) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 14;
+    }
     ctx.stroke();
+    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
     if (scene.showTruth && g.truth) {
       tracePolygon(ctx, g.truth);
@@ -151,7 +167,7 @@ export function drawScene(canvas: HTMLCanvasElement, scene: Scene) {
   }
 
   for (const g of scene.showLabels === false ? [] : scene.ghosts) {
-    if (!g.label) continue;
+    if (!g.label || (g.alpha ?? 1) < 0.5) continue;
     const [x, y] = toWorld(g.pose, CENTER);
     ctx.font = "600 13px system-ui, -apple-system, 'Segoe UI', sans-serif";
     ctx.textAlign = "center";

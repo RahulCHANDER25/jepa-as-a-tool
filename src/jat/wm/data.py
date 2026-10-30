@@ -53,6 +53,19 @@ class Rollouts:
         return cls(**values)
 
 
+def random_split(n: int, seed, val_share: float, test_share: float) -> np.ndarray:
+    """TRAIN / VAL / TEST per episode; at least one VAL and one TEST episode when n >= 3, so
+    tiny datasets (dry runs) can still be evaluated."""
+    split = np.random.default_rng(seed).choice(
+        [TRAIN, VAL, TEST], size=n, p=[1 - val_share - test_share, val_share, test_share]
+    )
+    if n >= 3:
+        for k, which in enumerate((VAL, TEST)):
+            if not (split == which).any():
+                split[n - 1 - k] = which
+    return split.astype(np.uint8)
+
+
 def _episode(args: tuple[str, int, int, int, float]) -> tuple[np.ndarray, ...]:
     world_name, seed, index, n_steps, aimed_share = args
     world = get_world(world_name)
@@ -98,7 +111,5 @@ def generate(
             if i % max(1, n_episodes // 10) == 0:
                 print(f"generated {i}/{n_episodes} episodes", flush=True)
     poses, pushes, moved, jammed = (np.stack(a) for a in zip(*episodes, strict=True))
-    split = np.random.default_rng([_STREAM, seed]).choice(
-        [TRAIN, VAL, TEST], size=n_episodes, p=[1 - val_share - test_share, val_share, test_share]
-    )
-    return Rollouts(poses, pushes, moved, jammed, split.astype(np.uint8), world)
+    split = random_split(n_episodes, [_STREAM, seed], val_share, test_share)
+    return Rollouts(poses, pushes, moved, jammed, split, world)

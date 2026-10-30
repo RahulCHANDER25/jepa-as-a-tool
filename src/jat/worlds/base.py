@@ -136,6 +136,10 @@ class World(Protocol):
 
     def goal_text(self, goal) -> str: ...
 
+    def outlines(self, state, goal: bool = False) -> list[tuple[tuple[int, int, int], np.ndarray]]:
+        """(RGB color, top-view outline [N, 2] in table px), one per object, for sketches.
+        `goal`: only the objects the goal is about."""
+
     def sample_task(self, family: str, seed: int, index: int) -> Task: ...
 
     def check(self, task: Task, state) -> Outcome: ...

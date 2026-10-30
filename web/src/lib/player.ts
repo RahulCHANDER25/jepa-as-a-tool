@@ -7,9 +7,13 @@ import { buildSteps, frameMap, loadEpisode, type Point, type Pose, type Step } f
 const STEP_MS = 2400; // pause on a step while playing
 const ROW_MS = 110; // one trajectory row = 0.1 s of physics, shown slightly slower
 const LOOP_PAUSE_MS = 3500;
+const FAN_MS = 1400; // imagined frames appear one by one over this time
+const CHOOSE_MS = 700; // the other plans fade, the chosen one turns green
+const TYPE_MS = 18; // per character of the agent's sentence
 const BADGES: Record<Step["kind"], string> = {
   start: "Task",
   imagine: "Imagine",
+  choose: "Choose",
   act: "Push",
   note: "Note",
   end: "Result",
@@ -40,21 +44,24 @@ async function mount(root: HTMLElement) {
   const counter = $<HTMLElement>("[data-counter]");
   const playButton = $<HTMLButtonElement>("[data-play]")!;
   const truth = $<HTMLInputElement>("[data-truth]");
+  const thought = $<HTMLElement>("[data-thought]");
 
   let index = 0;
   let playing = false;
   let timer = 0;
   let animation = 0;
   let lastScene: Scene | null = null;
+  let typer = 0;
 
   const truePose = (id: string) => frames.get(id)!.true_pose;
 
-  function ghost(id: string, strong: boolean): Ghost {
+  function ghost(id: string, strong: boolean, extra: Partial<Ghost> = {}): Ghost {
     const f = frames.get(id)!;
-    return { pose: f.pose, truth: f.true_pose, label: id, strong, push: f.push ?? undefined };
+    return { pose: f.pose, truth: f.true_pose, label: id, strong, push: f.push ?? undefined, ...extra };
   }
 
-  function scene(step: Step, real: Pose, pusher?: Point): Scene {
+  /** `t` in 0..1: how far the step's entrance animation is (1 = still picture). */
+  function scene(step: Step, real: Pose, pusher?: Point, t = 1): Scene {
     const base: Scene = {
       goal: episode.task.goal,
       real,
@@ -65,9 +72,22 @@ async function mount(root: HTMLElement) {
     if (step.kind === "imagine") {
       // an imagined starting frame is shown faint, under the new ones
       if (step.from.startsWith("I")) base.ghosts.push(ghost(step.from, false));
-      base.ghosts.push(...step.frames.map((id) => ghost(id, true)));
+      // fan in: frame i appears at t = i / n
+      const n = step.frames.length;
+      step.frames.forEach((id, i) => {
+        const alpha = Math.max(0, Math.min(1, t * n - i));
+        if (alpha > 0) base.ghosts.push(ghost(id, true, { alpha }));
+      });
+    }
+    if (step.kind === "choose") {
+      const fade = 1 - 0.75 * t;
+      base.ghosts.push(
+        ...step.candidates.filter((id) => id !== step.chosen).map((id) => ghost(id, false, { alpha: fade })),
+        ghost(step.chosen, true, { chosen: t > 0.3 }),
+      );
     }
     if (step.kind === "act") {
+      if (step.chosen) base.ghosts.push(ghost(step.chosen, false, { chosen: true, alpha: 0.7 }));
       base.realPush = frames.get(step.real)!.push ?? undefined;
       base.pusher = pusher;
     }
@@ -77,6 +97,26 @@ async function mount(root: HTMLElement) {
   function draw(s: Scene) {
     lastScene = s;
     drawScene(canvas, s);
+  }
+
+  /** The agent's sentence over the table, typed out when `typing`. */
+  function think(step: Step, typing: boolean) {
+    if (!thought) return;
+    const text = step.kind === "start" || step.kind === "end" ? "" : step.caption;
+    if (!text) return; // keep the last thought until the agent says something new
+    thought.hidden = false;
+    if (!typing || reduceMotion) {
+      thought.textContent = text;
+      return;
+    }
+    const started = performance.now();
+    const tick = (now: number) => {
+      const n = Math.floor((now - started) / TYPE_MS);
+      thought.textContent = text.slice(0, n);
+      if (n < text.length) typer = requestAnimationFrame(tick);
+    };
+    cancelAnimationFrame(typer);
+    typer = requestAnimationFrame(tick);
   }
 
   function render(final: boolean) {
@@ -99,7 +139,7 @@ async function mount(root: HTMLElement) {
         transcript.scrollTo({ top: top - 8, behavior: reduceMotion ? "auto" : "smooth" });
       }
     }
-    if (step.kind === "act" && !final) return;
+    if (!final) return; // an animation draws this step
     draw(scene(step, truePose(step.real)));
   }
 
@@ -122,8 +162,21 @@ async function mount(root: HTMLElement) {
     animation = requestAnimationFrame(tick);
   }
 
+  /** The imagine fan-in and the choose fade, over `ms`. */
+  function animateEntrance(step: Step, ms: number, done: () => void) {
+    const started = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - started) / ms);
+      draw(scene(step, truePose(step.real), undefined, t));
+      if (t < 1) animation = requestAnimationFrame(tick);
+      else done();
+    };
+    animation = requestAnimationFrame(tick);
+  }
+
   function stopMotion() {
     cancelAnimationFrame(animation);
+    cancelAnimationFrame(typer);
     clearTimeout(timer);
   }
 
@@ -131,10 +184,18 @@ async function mount(root: HTMLElement) {
     stopMotion();
     index = Math.max(0, Math.min(steps.length - 1, i));
     const step = steps[index];
-    const moving = animate && step.kind === "act" && !reduceMotion;
-    render(!moving);
-    if (moving) animateAct(step as Extract<Step, { kind: "act" }>, scheduleNext);
-    else scheduleNext();
+    const motion = animate && !reduceMotion;
+    think(step, motion);
+    if (motion && step.kind === "act") {
+      render(false);
+      animateAct(step, scheduleNext);
+    } else if (motion && (step.kind === "imagine" || step.kind === "choose")) {
+      render(false);
+      animateEntrance(step, step.kind === "imagine" ? FAN_MS : CHOOSE_MS, scheduleNext);
+    } else {
+      render(true);
+      scheduleNext();
+    }
   }
 
   function scheduleNext() {

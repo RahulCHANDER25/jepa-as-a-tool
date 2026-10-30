@@ -160,6 +160,9 @@ class TWorld(ABC):
     def state_text(self, state, goal=None) -> str:
         return geo.pose_text(state, goal)
 
+    def outlines(self, state, goal: bool = False) -> list[tuple[tuple[int, int, int], np.ndarray]]:
+        return [((70, 110, 170), geo.to_world(state, geo.OUTLINE))]
+
     def goal_text(self, goal) -> str:
         cx, cy = geo.center(goal)
         degrees = round(math.degrees(goal[2])) % 360

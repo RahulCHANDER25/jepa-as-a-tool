@@ -246,6 +246,12 @@ class Billiards:
             lines.append(f"  goal error: red ball {self._error(state, goal):.0f} px from the goal")
         return "\n".join(lines)
 
+    def outlines(self, state, goal: bool = False) -> list[tuple[tuple[int, int, int], np.ndarray]]:
+        angles = np.linspace(0, 2 * np.pi, 32, endpoint=False)
+        circle = RADIUS * np.stack([np.cos(angles), np.sin(angles)], -1)
+        balls = list(zip(((225, 225, 215), (200, 40, 40)), self._balls(state), strict=True))
+        return [(color, center + circle) for color, center in balls[1 if goal else 0 :]]
+
     def goal_text(self, goal) -> str:
         rx, ry = self._balls(goal)[1]
         return f"Put the red ball at ({rx:.0f}, {ry:.0f}). The white ball may end anywhere."

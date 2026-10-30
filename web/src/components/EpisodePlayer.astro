@@ -19,7 +19,8 @@ const { episode, title, compact = false, autoplay = false } = Astro.props;
   {title && <figcaption class="player-title">{title}</figcaption>}
   <div class="player-body">
     <div class="stage">
-      <canvas role="img" aria-label="The PushT table: real T in gray, goal in green, imagined T's in blue"></canvas>
+      <canvas role="img" aria-label="The PushT table: real T in gray, goal in green, imagined T's in blue, the chosen plan in bright green"></canvas>
+      <p class="thought" data-thought hidden aria-live="polite"></p>
       <p class="caption" data-caption aria-live="polite">Loading…</p>
     </div>
     {!compact && <ol class="transcript" data-transcript aria-label="What the agent did"></ol>}
@@ -46,6 +47,7 @@ const { episode, title, compact = false, autoplay = false } = Astro.props;
         <li><i class="k-real" />real T</li>
         <li><i class="k-goal" />goal</li>
         <li><i class="k-ghost" />imagined T</li>
+        <li><i class="k-chosen" />the plan it picks</li>
         <li><i class="k-truth" />where it really goes</li>
         <li><i class="k-pusher" />pusher</li>
       </ul>

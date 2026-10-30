@@ -9,6 +9,7 @@ dependencies = [
     "gym-pusht>=0.1.8",
     "langchain-core>=1.7.0",
     "langchain-openai>=1.7.3",
+    "mcp>=1.10",
     "mujoco>=3.17.0",
     "numpy>=2.0",
     "opencv-python>=4.14.0.94",
@@ -25,6 +26,9 @@ jat = "jat.cli:app"
 
 [dependency-groups]
 dev = [
+    "onnx>=1.23.2",
+    "onnxruntime>=1.31.1",
+    "onnxscript>=0.7.2",
     "pytest>=8.0",
     "ruff>=0.6",
 ]
