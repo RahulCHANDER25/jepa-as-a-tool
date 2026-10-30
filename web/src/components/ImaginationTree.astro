@@ -1,0 +1,26 @@
+---
+// Every frame of one episode as a tree; click a frame to see it on the table.
+interface Props {
+  episode: string;
+}
+const { episode } = Astro.props;
+---
+
+<figure class="tree wide" data-tree data-episode={episode}>
+  <div class="tree-body">
+    <div class="stage">
+      <canvas role="img" aria-label="The selected frame on the table"></canvas>
+      <p class="caption" data-caption aria-live="polite">Loading…</p>
+    </div>
+    <div class="tree-list" data-list aria-label="Frames of the episode"></div>
+  </div>
+  <div class="controls">
+    <label class="toggle"><input type="checkbox" data-truth checked /> show the real outcome</label>
+    <span class="hint"><b>R</b> = real frame, <b>I</b> = imagined; underlined = imagined, then run for real</span>
+  </div>
+</figure>
+
+<script>
+  import { mountTrees } from "../lib/tree";
+  mountTrees();
+</script>

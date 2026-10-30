@@ -1,0 +1,18 @@
+---
+// How one imagined push flows through the system.
+---
+
+<figure class="pipeline wide">
+  <ol class="pipe">
+    <li class="pipe-box"><b>Table image</b><span>256 × 256, rendered from the pose</span></li>
+    <li class="pipe-box meta"><b>V-JEPA 2</b><span>Meta's video encoder, frozen</span></li>
+    <li class="pipe-box"><b>Latent</b><span>64 tokens × 1,024 numbers</span></li>
+    <li class="pipe-box trained"><b>Predictor</b><span>latent + push → next latent</span></li>
+    <li class="pipe-box trained"><b>Translator</b><span>latent → T position and angle</span></li>
+    <li class="pipe-box meta"><b>Muse Spark</b><span>reads the text, picks the next pushes</span></li>
+  </ol>
+  <figcaption>
+    <span class="key meta"></span> Meta model &nbsp; <span class="key trained"></span> trained during the
+    hackathon. Imagined frames never become images again: chains of pushes stay in latent space.
+  </figcaption>
+</figure>
