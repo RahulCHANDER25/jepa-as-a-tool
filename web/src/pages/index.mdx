@@ -34,7 +34,7 @@ block by pushing it, an LLM guesses where to push, and has no way to check the g
 
 Same task, same model. On the left the LLM acts on its own; on the right it can imagine first.
 
-<Compare task="rotate-0-020" />
+<Compare task="rotate-0-011" />
 
 ## The idea: a world model as a tool
 
@@ -57,10 +57,10 @@ the lab where we can check every imagined frame against the true physics.
 
 ## Watch it think
 
-Step through a full episode. Each _Imagine_ step shows the plans the agent tried; each _Push_
-step is a real push on the table.
+Step through a full episode, here a task that needs both a move and a turn. Each _Imagine_ step
+shows the plans the agent tried; each _Push_ step is a real push on the table.
 
-<EpisodePlayer episode="rotate-0-021__wm_tool__s0" />
+<EpisodePlayer episode="pose-0-032__wm_tool__s0" />
 
 ## The imagination tree
 
@@ -71,11 +71,27 @@ frames are pushes the agent imagined and then ran for real.
 
 ## Results
 
-Muse Spark on the same tasks, in three settings: alone, with the world model, and with the real
-physics engine as its imagination (the best case). With the world model the agent solves
-<Success setting="wm_tool" /> of the tasks, against <Success setting="no_tool" /> alone.
+Muse Spark 1.3 on 150 tasks in three families (50 each), in three settings: alone, with the world
+model, and with the real physics engine as its imagination (the best case). Every setting plays the
+same tasks.
 
 <ResultsChart />
+
+- **Turn: the world model helps a lot.** The agent solves <Success setting="wm_tool" family="rotate" />
+  of the tasks with the world model, against <Success setting="no_tool" family="rotate" /> alone.
+  On the same tasks, the world model wins 17 that the agent alone loses, and loses 4 that it wins
+  (paired test, p = 0.007). That is more than half of the gain the perfect simulator gives.
+- **Move: easy for everyone.** A straight shift is easy to guess: <Success setting="no_tool" family="translate" />
+  alone, <Success setting="wm_tool" family="translate" /> with the world model.
+- **Move and turn: the world model hurts.** <Success setting="wm_tool" family="pose" /> with the
+  world model, against <Success setting="no_tool" family="pose" /> alone (4 tasks won, 9 lost; not a
+  significant difference). With the real physics the agent reaches <Success setting="oracle_tool" family="pose" />,
+  so the tool and the way the agent uses it work. The predictions are the weak point:
+  these tasks need chains of three pushes, and the errors add up (see _Limits_).
+
+The agent uses the tool heavily: it imagines 50 to 77 pushes per task on average before its 2 or 3
+real ones. This is the opposite of what Qian et al. (ACL 2026) found, where agents rarely called the
+world model they were given. The price is tokens: about 3.5 times more than the agent alone.
 
 How far ahead can it imagine? The longer the chain of imagined pushes, the more the errors add up.
 The second version of the world model, trained on 3× more data and longer chains, stays accurate
@@ -85,12 +101,19 @@ much longer.
 
 ## Limits
 
-- The world model is sometimes wrong, mostly on hard contacts: grazing a corner, or the T against a
-  wall. In this episode the agent notices: _"That push rotated the wrong way in reality, so I'll run
-  a fresh batch of simulations from the current position."_
+- **Errors add up over a chain.** After one imagined push, about 80% of the predictions land within
+  20 px and 15° of the truth. After three, only about half do, and only a quarter in the failed
+  move-and-turn tasks. The agent sometimes notices: _"The real result differed from prediction, so
+  I'll explore new pushes from the current position."_ Here it still runs out of pushes, on a task
+  it solves alone.
 
-<EpisodePlayer episode="rotate-0-022__wm_tool__s0" />
+<EpisodePlayer episode="pose-0-030__wm_tool__s0" />
 
+- **Near misses.** When an imagined push slides past the T without touching it, the world model
+  still moves the T by about 10 px. It saw many clear misses in training, but few pushes that
+  graze the T, and those are exactly what a careful agent tries.
+- **Imagined pushes are harder than the training pushes.** On random pushes, the world model's
+  median error after one push is 3 px; on the pushes the agent picks, it is 6 to 7 px.
 - PushT is a 2D lab. The next step is real camera images, where V-JEPA 2 is at home.
 
 ## Built during the hackathon
