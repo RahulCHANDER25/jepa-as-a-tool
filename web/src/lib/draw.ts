@@ -1,4 +1,4 @@
-// The PushT table on a canvas. Same T geometry as src/jat/env/geometry.py, so ghosts and real
+// The PushT table on a canvas. Same T geometry as src/jat/worlds/tblock/shape.py, so ghosts and real
 // T's line up exactly with what the Python side computed.
 
 import type { Point, Pose } from "./episode";

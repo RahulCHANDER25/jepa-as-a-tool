@@ -10,7 +10,7 @@ from typing import Any, Literal
 
 import numpy as np
 
-from jat.env.pusht import Push
+from jat.worlds.base import Push
 
 
 class UnknownFrame(KeyError):

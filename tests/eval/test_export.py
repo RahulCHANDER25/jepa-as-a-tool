@@ -1,8 +1,10 @@
 import json
 
-from jat.env.tasks import sample_task
 from jat.eval.export import export_web
 from jat.eval.run import run_grid
+from jat.worlds import get_world
+
+sample_task = get_world("pusht").sample_task
 
 
 def test_export_writes_tables_and_every_episode(tmp_path):

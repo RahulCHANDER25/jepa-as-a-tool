@@ -14,11 +14,11 @@ import numpy as np
 
 from jat.agent.episode_log import AgentInfo, EpisodeLog, frame_logs
 from jat.agent.loop import run_episode
-from jat.env.pusht import random_aimed_push
-from jat.env.tasks import Task, check
 from jat.tool.backends import OracleBackend, WorldModelBackend
 from jat.tool.session import Session
 from jat.wm.models import WorldModel
+from jat.worlds import get_world
+from jat.worlds.base import Task
 
 SETTINGS = ("no_tool", "wm_tool", "oracle_tool", "random")
 ModelFactory = Callable[[], tuple[object, AgentInfo]]
@@ -34,17 +34,18 @@ def run_random(task: Task, seed: int) -> EpisodeLog:
     rng = np.random.default_rng(
         [seed, zlib.crc32(task.id.encode())]
     )  # hash() is salted per process
-    session = Session(task, OracleBackend(), simulate_enabled=False)
+    world = get_world(task.world)
+    session = Session(task, OracleBackend(world), simulate_enabled=False)
     while not session.finished:
-        session.act(random_aimed_push(session.world.pose(), rng))
-    final_pose = session.world.pose()
+        session.act(world.aimed_push(session.state, rng))
+    final_pose = session.state
     return EpisodeLog(
         episode_id=episode_id(task, "random", seed),
         setting="random",
         backend="oracle",
         task=task,
-        frames=frame_logs(session.frames),
-        outcome=check(task, final_pose),
+        frames=frame_logs(session.frames, world),
+        outcome=world.check(task, final_pose),
         final_pose=final_pose.tolist(),
         stop_reason=session.stop_reason,
         wall_time_s=time.time() - started,
@@ -68,7 +69,7 @@ def run_one(
         backend = WorldModelBackend(world_model)
     else:
         # no_tool also uses the oracle backend: only to read the current frame, never to imagine.
-        backend = OracleBackend()
+        backend = OracleBackend(get_world(task.world))
     model, agent = model_factory()
     return run_episode(task, setting, backend, model, agent, episode_id(task, setting, seed))
 

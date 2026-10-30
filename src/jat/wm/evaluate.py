@@ -9,10 +9,10 @@ import math
 import numpy as np
 import torch
 
-from jat.env import geometry as geo
-from jat.env.tasks import ANGLE_TOLERANCE, POSITION_TOLERANCE
 from jat.wm.dataset import LatentData
 from jat.wm.models import Predictor, Translator, output_to_pose
+from jat.worlds.tblock import shape as geo
+from jat.worlds.tblock.world import ANGLE_TOLERANCE, POSITION_TOLERANCE
 
 
 def pose_errors(pred: torch.Tensor, true: torch.Tensor) -> tuple[np.ndarray, np.ndarray]:

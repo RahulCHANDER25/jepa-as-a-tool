@@ -6,6 +6,8 @@ from typing import Annotated
 import typer
 from dotenv import load_dotenv
 
+from jat.worlds import WORLDS, get_world
+
 app = typer.Typer(no_args_is_help=True, help="jepa-as-a-tool pipeline.")
 
 
@@ -18,19 +20,29 @@ def _csv(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+WORLD_HELP = f"World: {' | '.join(WORLDS)}."
+
+
+def _world(name: str):
+    try:
+        return get_world(name)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from None
+
+
 @app.command()
 def tasks(
     family: Annotated[str, typer.Argument(help="translate | rotate | pose")],
     n: int = 5,
     seed: int = 0,
+    world: str = typer.Option("pusht", help=WORLD_HELP),
 ) -> None:
-    """Print sampled tasks: start pose, goal, and the reference plan length."""
-    from jat.env import geometry as geo
-    from jat.env.tasks import sample_tasks
-
-    for task in sample_tasks(family, n, seed):
+    """Print sampled tasks: start state, goal, and the reference plan length."""
+    w = _world(world)
+    for i in range(n):
+        task = w.sample_task(family, seed, i)
         typer.echo(f"{task.id}  ({len(task.ref_plan)}-push reference plan)\n  {task.text}")
-        typer.echo("  start: " + geo.pose_text(task.start, task.goal).replace("\n", "\n  "))
+        typer.echo("  start: " + w.state_text(task.start, task.goal).replace("\n", "\n  "))
 
 
 @app.command()
@@ -40,15 +52,17 @@ def gen(
     steps: int = 6,
     seed: int = 0,
     workers: int = 4,
+    world: str = typer.Option("pusht", help=WORLD_HELP),
 ) -> None:
-    """Generate random-push episodes in PushT (CPU)."""
+    """Generate random-push episodes in a world's physics (CPU)."""
     from jat.wm.data import generate
 
-    rollouts = generate(episodes, steps, seed, workers=workers)
+    _world(world)
+    rollouts = generate(episodes, steps, seed, workers=workers, world=world)
     rollouts.save(out)
     typer.echo(
         f"{episodes} episodes x {steps} pushes -> {out / 'rollouts.npz'}  "
-        f"(T moved in {rollouts.moved.mean():.0%} of pushes, jammed in {rollouts.jammed.mean():.1%})"
+        f"(something moved in {rollouts.moved.mean():.0%} of pushes, jammed in {rollouts.jammed.mean():.1%})"
     )
 
 
@@ -80,7 +94,7 @@ def train_translator(
     batch: int = 256,
     lr: float = 1e-3,
 ) -> None:
-    """Latent -> pose. Its test error says whether V-JEPA 2 latents show where the T is."""
+    """Latent -> state. Its test error says whether V-JEPA 2 latents show the world's state."""
     from jat.wm import train
     from jat.wm.dataset import LatentData
     from jat.wm.encoder import default_device
@@ -127,7 +141,7 @@ def wm_eval(
     wm: Annotated[Path, typer.Option(help="Run folder with translator.pt and predictor.pt.")],
     split: str = "test",
 ) -> None:
-    """Imagined pose vs true pose after 0, 1, 2, ... pushes. No LLM."""
+    """Imagined state vs true state after 0, 1, 2, ... pushes. No LLM."""
     from jat.wm.data import TEST, VAL
     from jat.wm.dataset import LatentData
     from jat.wm.encoder import default_device
@@ -146,6 +160,7 @@ def wm_eval(
 @app.command(name="eval")
 def eval_(
     out: Annotated[Path, typer.Option(help="Run folder; episodes already in it are skipped.")],
+    world: str = typer.Option("pusht", help=WORLD_HELP),
     families: str = "rotate",
     n: int = 30,
     task_seed: int = 0,
@@ -162,11 +177,11 @@ def eval_(
     from jat.agent.episode_log import AgentInfo
     from jat.agent.llm import chat_model
     from jat.agent.prompts import PROMPT_VERSION
-    from jat.env.tasks import sample_tasks
     from jat.eval.metrics import format_table, summarize
     from jat.eval.run import run_grid
 
-    task_list = [t for f in _csv(families) for t in sample_tasks(f, n, task_seed)]
+    w = _world(world)
+    task_list = [w.sample_task(f, task_seed, i) for f in _csv(families) for i in range(n)]
     setting_list = _csv(settings)
     world_model = None
     if "wm_tool" in setting_list:
@@ -175,6 +190,10 @@ def eval_(
         from jat.wm.models import WorldModel
 
         world_model = WorldModel.load(wm)
+        if world_model.world.name != w.name:
+            raise typer.BadParameter(
+                f"--wm was trained on {world_model.world.name!r}, the tasks are in {w.name!r}"
+            )
 
     def model_factory():
         model = chat_model(provider, temperature)

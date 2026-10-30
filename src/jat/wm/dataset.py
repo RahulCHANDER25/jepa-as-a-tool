@@ -7,9 +7,9 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from jat.env import geometry as geo
 from jat.wm.data import Rollouts
 from jat.wm.encoder import load_latents
+from jat.worlds.base import TABLE
 
 
 def available_ram() -> float:
@@ -43,7 +43,7 @@ class LatentData:
         self.z = z  # [E, T+1, P, D]
         self.poses = torch.tensor(self.rollouts.poses, dtype=torch.float32, device=device)
         # Same scaling as Push.numeric()
-        pushes = self.rollouts.pushes / (geo.TABLE / 2) - 1
+        pushes = self.rollouts.pushes / (TABLE / 2) - 1
         self.pushes = torch.tensor(pushes, dtype=torch.float32, device=device)  # [E, T, 4]
         self.moved = torch.tensor(self.rollouts.moved, device=device)  # [E, T]
 

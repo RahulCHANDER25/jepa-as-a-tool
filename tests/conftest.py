@@ -18,8 +18,8 @@ class FakeEncoder:
 
     n_tokens, dim = 4, 8
 
-    def encode_poses(self, poses) -> torch.Tensor:
-        out = pose_to_output(torch.tensor(np.asarray(poses), dtype=torch.float32))
+    def encode_states(self, world, states) -> torch.Tensor:
+        out = pose_to_output(torch.tensor(np.asarray(states), dtype=torch.float32))
         z = torch.zeros(len(out), self.n_tokens, self.dim)
         z[:, :, :4] = out[:, None, :]
         return z
@@ -37,7 +37,7 @@ def fake_dataset(tmp_path, fake_encoder):
     rollouts.split[:] = 0
     rollouts.split[:4], rollouts.split[4:8] = VAL, TEST
     rollouts.save(tmp_path)
-    z = fake_encoder.encode_poses(rollouts.poses.reshape(-1, 3))
+    z = fake_encoder.encode_states(None, rollouts.poses.reshape(-1, 3))
     np.save(tmp_path / "latents.npy", z.reshape(24, 4, 4, 8).numpy().astype(np.float16))
     meta = {"encoder": "fake", "pool": 1, "shape": [24, 4, 4, 8]}
     (tmp_path / "latents.json").write_text(json.dumps(meta))

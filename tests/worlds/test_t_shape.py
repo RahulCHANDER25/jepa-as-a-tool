@@ -3,14 +3,15 @@ import math
 import numpy as np
 from gym_pusht.envs.pusht import PushTEnv
 
-from jat.env import geometry as geo
-from jat.env.pusht import World
+from jat.worlds.pusht.world import _Table
+from jat.worlds.tblock import shape as geo
 
 
 def test_keypoints_match_gym_pusht():
-    world = World([300.0, 250.0, 0.7])
-    ours = geo.keypoints(world.pose())
-    theirs = PushTEnv.get_keypoints(world._env._block_shapes)
+    table = _Table()
+    table.set_pose([300.0, 250.0, 0.7])
+    ours = geo.keypoints(table.pose())
+    theirs = PushTEnv.get_keypoints(table._env._block_shapes)
     np.testing.assert_allclose(ours, theirs, atol=1e-6)
 
 

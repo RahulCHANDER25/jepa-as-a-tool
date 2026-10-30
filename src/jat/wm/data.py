@@ -1,7 +1,7 @@
-"""Training data for the world model: random push episodes in the real PushT physics.
+"""Training data for the world model: random push episodes in a world's real physics.
 
 One dataset = one folder:
-  rollouts.npz   poses, pushes and flags of every episode (written by `generate`)
+  rollouts.npz   world name, states, pushes and flags of every episode (written by `generate`)
   latents.npy    V-JEPA 2 tokens of every pose, fp16 [E, T+1, P, D] (written by `jat encode`)
   latents.json   how the latents were made: encoder id, pooling, shape
 Episodes all have the same length, so plain dense arrays are enough.
@@ -14,7 +14,8 @@ from pathlib import Path
 
 import numpy as np
 
-from jat.env.pusht import World, random_aimed_push, random_start_pose, random_uniform_push
+from jat.worlds import get_world
+from jat.worlds.base import uniform_push
 
 TRAIN, VAL, TEST = 0, 1, 2
 # Mixed into every episode seed. Tasks seed their rng with [seed, index]; without this,
@@ -24,11 +25,12 @@ _STREAM = 7_000_001
 
 @dataclass
 class Rollouts:
-    poses: np.ndarray  # [E, T+1, 3] float: x, y, theta
+    poses: np.ndarray  # [E, T+1, S] float: the world state (T worlds: x, y, theta)
     pushes: np.ndarray  # [E, T, 4] float: start x, y, end x, y in table px
     moved: np.ndarray  # [E, T] bool: the push moved the T
     jammed: np.ndarray  # [E, T] bool: the push stopped early, T pinned against a wall
     split: np.ndarray  # [E] uint8: TRAIN, VAL or TEST
+    world: str = "pusht"
 
     @property
     def n_episodes(self) -> int:
@@ -45,30 +47,34 @@ class Rollouts:
     @classmethod
     def load(cls, folder: Path) -> "Rollouts":
         with np.load(folder / "rollouts.npz") as arrays:
-            return cls(**{f.name: arrays[f.name] for f in fields(cls)})
+            values = {f.name: arrays[f.name] for f in fields(cls) if f.name in arrays}
+        # Datasets made before there were several worlds have no name: they are PushT.
+        values["world"] = str(values.get("world", "pusht"))
+        return cls(**values)
 
 
-def _episode(args: tuple[int, int, int, float]) -> tuple[np.ndarray, ...]:
-    seed, index, n_steps, aimed_share = args
+def _episode(args: tuple[str, int, int, int, float]) -> tuple[np.ndarray, ...]:
+    world_name, seed, index, n_steps, aimed_share = args
+    world = get_world(world_name)
     rng = np.random.default_rng([_STREAM, seed, index])
-    world = World(random_start_pose(rng))
-    poses, pushes, moved, jammed = [world.pose()], [], [], []
+    state = world.random_start(rng)
+    states, pushes, moved, jammed = [state], [], [], []
     for _ in range(n_steps):
-        pose = world.pose()
         push = None
         if rng.random() < aimed_share:
             try:
-                push = random_aimed_push(pose, rng)
-            except RuntimeError:  # T squeezed in a corner: no aimed push fits
+                push = world.aimed_push(state, rng)
+            except RuntimeError:  # object squeezed in a corner: no aimed push fits
                 pass
         if push is None:
-            push = random_uniform_push(pose, rng)
-        result = world.push(push)
-        poses.append(world.pose())
+            push = uniform_push(world, state, rng)
+        result = world.push(state, push)
+        state = np.array(result.state)
+        states.append(state)
         pushes.append([*push.start, *push.end])
         moved.append(result.moved)
         jammed.append(result.jammed)
-    return np.array(poses), np.array(pushes), np.array(moved), np.array(jammed)
+    return np.array(states), np.array(pushes), np.array(moved), np.array(jammed)
 
 
 def generate(
@@ -79,10 +85,11 @@ def generate(
     val_share: float = 0.05,
     test_share: float = 0.05,
     workers: int = 4,
+    world: str = "pusht",
 ) -> Rollouts:
     """Episodes of `n_steps` random pushes. Aimed pushes hit the T; uniform ones mostly miss,
     which teaches the model that a missed push changes nothing."""
-    jobs = [(seed, i, n_steps, aimed_share) for i in range(n_episodes)]
+    jobs = [(world, seed, i, n_steps, aimed_share) for i in range(n_episodes)]
     with ProcessPoolExecutor(workers) if workers > 1 else nullcontext() as pool:
         results = pool.map(_episode, jobs, chunksize=16) if pool else map(_episode, jobs)
         episodes = []
@@ -94,4 +101,4 @@ def generate(
     split = np.random.default_rng([_STREAM, seed]).choice(
         [TRAIN, VAL, TEST], size=n_episodes, p=[1 - val_share - test_share, val_share, test_share]
     )
-    return Rollouts(poses, pushes, moved, jammed, split.astype(np.uint8))
+    return Rollouts(poses, pushes, moved, jammed, split.astype(np.uint8), world)

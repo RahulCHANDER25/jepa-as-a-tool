@@ -74,7 +74,7 @@ Interrupted evaluations resume: finished episodes are skipped.
 
 | Folder | Content |
 |---|---|
-| `src/jat/env` | PushT with a straight-push action, rendering, task families |
+| `src/jat/worlds` | one folder per world (physics, frames, rules, tasks); `tblock` holds what the T worlds share |
 | `src/jat/wm` | data generator, V-JEPA 2 encoding, predictor, translator, training, evaluation |
 | `src/jat/tool` | the `simulate` tool, frame handles, oracle and world-model backends |
 | `src/jat/agent` | prompts, LLM client, agent loop, episode logs |

@@ -1,4 +1,4 @@
-"""Shape of the PushT T block and everything computed from its pose.
+"""Shape of the T block and everything computed from its pose. Shared by every T world.
 
 Pose = (x, y, theta), the gym-pusht convention: (x, y) is the body origin, the middle of the
 bar's top edge; theta is the body angle in radians. Pixel coordinates on a 512 x 512 table,
@@ -9,8 +9,6 @@ import math
 
 import numpy as np
 from shapely.geometry import Point, Polygon
-
-TABLE = 512
 
 # Local vertices, same order as gym-pusht's two shapes, so keypoints() matches get_keypoints().
 BAR = np.array([(-60, 0), (60, 0), (60, 30), (-60, 30)], dtype=float)

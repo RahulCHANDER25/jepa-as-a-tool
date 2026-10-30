@@ -11,9 +11,11 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from jat.env import geometry as geo
+from jat.worlds import get_world
+from jat.worlds.base import TABLE, World
+from jat.worlds.tblock import shape as geo
 
-HALF = geo.TABLE / 2
+HALF = TABLE / 2
 _LANDMARKS = torch.tensor(list(geo.LANDMARKS.values()), dtype=torch.float32)  # [4, 2] local px
 
 
@@ -139,11 +141,12 @@ def load_module(cls: type[nn.Module], path: Path, device: torch.device | str = "
 class WorldModel:
     """Encoder + predictor + translator: what the `simulate` tool runs on.
 
-    `encoder` is anything with `encode_poses(poses) -> [B, P, D]`; the real one is
-    `jat.wm.encoder.Encoder`.
+    `encoder` is anything with `encode_states(world, states) -> [B, P, D]`; the real one is
+    `jat.wm.encoder.Encoder`. `world` renders the real frames the encoder sees.
     """
 
-    def __init__(self, encoder, predictor: Predictor, translator: Translator):
+    def __init__(self, world: World, encoder, predictor: Predictor, translator: Translator):
+        self.world = world
         self.encoder, self.predictor, self.translator = encoder, predictor, translator
         self.device = next(predictor.parameters()).device
 
@@ -153,12 +156,14 @@ class WorldModel:
 
         translator, meta = load_module(Translator, run / "translator.pt", device)
         predictor, _ = load_module(Predictor, run / "predictor.pt", device)
-        encoder = Encoder(meta["latents"]["encoder"], meta["latents"]["pool"], torch.device(device))
-        return cls(encoder, predictor, translator)
+        latents = meta["latents"]
+        encoder = Encoder(latents["encoder"], latents["pool"], torch.device(device))
+        # Runs trained before there were several worlds have no name: they are PushT.
+        return cls(get_world(latents.get("world", "pusht")), encoder, predictor, translator)
 
     @torch.no_grad()
-    def encode(self, poses) -> torch.Tensor:
-        return self.encoder.encode_poses(poses).to(self.device)
+    def encode(self, states) -> torch.Tensor:
+        return self.encoder.encode_states(self.world, states).to(self.device)
 
     @torch.no_grad()
     def step(self, z: torch.Tensor, pushes: np.ndarray) -> torch.Tensor:

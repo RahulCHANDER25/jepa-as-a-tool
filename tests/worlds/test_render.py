@@ -1,7 +1,11 @@
 import numpy as np
 
-from jat.env import geometry as geo
-from jat.env.render import T_GRAY, render
+from jat.worlds import get_world
+from jat.worlds.base import TABLE
+from jat.worlds.pusht.world import T_GRAY
+from jat.worlds.tblock import shape as geo
+
+render = get_world("pusht").render
 
 T_AREA_PX = 120 * 30 + 30 * 90  # on the 512 px table
 
@@ -15,7 +19,7 @@ def test_render_draws_the_t_area_at_its_center():
     pose = [300.0, 180.0, 0.9]
     image = render(pose, size=256)
     weight = _coverage_map(image)
-    scale = 256 / geo.TABLE
+    scale = 256 / TABLE
     assert image.shape == (256, 256, 3) and image.dtype == np.uint8
     assert abs(weight.sum() - T_AREA_PX * scale**2) / (T_AREA_PX * scale**2) < 0.02
     ys, xs = np.indices(weight.shape)
