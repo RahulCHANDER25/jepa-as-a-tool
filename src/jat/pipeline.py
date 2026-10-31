@@ -83,6 +83,17 @@ SIZES = {
 }
 
 
+def job_env(gpu: int | None) -> dict[str, str]:
+    """The environment of a job pinned to one GPU. The job sees only that GPU, as device 0, for
+    CUDA and for MuJoCo's EGL rendering alike: never set MUJOCO_EGL_DEVICE_ID to the physical
+    index, EGL would refuse it."""
+    env = os.environ.copy()
+    env.pop("MUJOCO_EGL_DEVICE_ID", None)
+    if gpu is not None:
+        env["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    return env
+
+
 class Pipeline:
     def __init__(
         self,
@@ -111,10 +122,7 @@ class Pipeline:
     # Running jat commands
 
     def _start(self, name: str, args: list[str], gpu: int | None = None) -> subprocess.Popen:
-        env = os.environ.copy()
-        if gpu is not None:
-            env["CUDA_VISIBLE_DEVICES"] = str(gpu)
-            env["MUJOCO_EGL_DEVICE_ID"] = str(gpu)
+        env = job_env(gpu)
         log = open(self.logs / f"{name}.log", "a")  # noqa: SIM115 (closed with the process)
         log.write(f"\n$ jat {' '.join(args)}\n")
         log.flush()
