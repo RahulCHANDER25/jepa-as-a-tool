@@ -94,6 +94,56 @@ def job_env(gpu: int | None) -> dict[str, str]:
     return env
 
 
+# One job per GPU, started like the pipeline's own jobs: CUDA, V-JEPA 2's config, MuJoCo
+# physics and rendering of both 3D worlds, the CLI.
+_JOB_CHECK = """
+import torch
+from jat.cli import app
+from jat.wm.encoder import VJEPA2_ID
+from jat.worlds import get_world
+assert torch.cuda.is_available() or {cpu}, "no CUDA in this job"
+device = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+x = torch.ones(1024, device="cuda" if torch.cuda.is_available() else "cpu").sum().item()
+tabletop = get_world("tabletop").render([256.0, 200.0, 0.0])
+billiards = get_world("billiards").render([150.0, 256.0, 400.0, 100.0])
+assert tabletop.std() > 5 and billiards.std() > 5, "blank frames"
+print(f"{{device}}, renders ok ({{tabletop.shape[0]}} px)")
+"""
+
+
+def preflight(gpus: int = 0) -> None:
+    """Checks everything the run needs before the run needs it: every jat module imports in
+    this process, and a job on each GPU (started exactly like the pipeline's jobs) sees CUDA
+    and renders both 3D worlds. Raises if anything fails."""
+    import importlib
+    import pkgutil
+
+    import jat
+
+    failures, lines = [], []
+    for module in sorted(m.name for m in pkgutil.walk_packages(jat.__path__, "jat.")):
+        try:
+            importlib.import_module(module)
+            lines.append(f"  ok      import {module}")
+        except Exception as error:  # noqa: BLE001 (report every failure, then raise once)
+            failures.append(module)
+            lines.append(f"  FAILED  import {module}: {type(error).__name__}: {error}")
+    for gpu in range(gpus) if gpus else [None]:
+        name = f"job on GPU {gpu}" if gpu is not None else "job on CPU"
+        code = _JOB_CHECK.format(cpu=gpu is None)
+        run = subprocess.run(
+            [sys.executable, "-c", code], env=job_env(gpu), capture_output=True, text=True
+        )
+        last = (run.stdout or run.stderr).strip().splitlines()[-1:] or ["no output"]
+        if run.returncode != 0:
+            failures.append(name)
+        lines.append(f"  {'ok     ' if run.returncode == 0 else 'FAILED '} {name}: {last[0]}")
+    print("\n".join(lines))
+    if failures:
+        raise RuntimeError(f"preflight failed: {', '.join(failures)}")
+    print("Everything the run needs works.")
+
+
 class Pipeline:
     def __init__(
         self,

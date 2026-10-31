@@ -191,6 +191,14 @@ def learn_data(
 
 
 @app.command()
+def preflight(gpus: int = typer.Option(0, help="GPUs the run will use (0: CPU).")) -> None:
+    """Check every module imports, and that a job on each GPU sees CUDA and renders the 3D worlds."""
+    from jat.pipeline import preflight as check
+
+    check(gpus)
+
+
+@app.command()
 def pipeline(
     work: Annotated[Path, typer.Option(help="Folder for data, runs, results and logs.")],
     size: str = typer.Option("full", help="full | small (toy sizes, for a dry run)."),
