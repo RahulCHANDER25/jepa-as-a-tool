@@ -235,14 +235,14 @@ class Pipeline:
         """Random-push episodes of the new worlds (CPU), PushT's (attached or generated), and
         the agent's own imagined pushes from the PushT evaluation logs."""
         s = self.sizes
-        jobs = []
-        for world, episodes in (
-            *((w, s.episodes) for w in NEW_WORLDS),
-            (NEW_LOOK, s.new_look_episodes),
-        ):
-            if not (self.data / world / "rollouts.npz").exists():
-                args = ["gen", str(self.data / world), "--world", world, "--episodes"]
-                jobs.append((f"gen-{world}", [*args, str(episodes), "--steps", str(s.steps)]))
+        jobs = [
+            self._gen_job(world, episodes)
+            for world, episodes in (
+                *((w, s.episodes) for w in NEW_WORLDS),
+                (NEW_LOOK, s.new_look_episodes),
+            )
+            if not (self.data / world / "rollouts.npz").exists()
+        ]
         pusht = self.data / "pusht"
         if not pusht.exists():
             if self.pusht_data is not None:
@@ -251,13 +251,19 @@ class Pipeline:
             else:
                 args = ["gen", str(pusht), "--episodes", str(s.pusht_episodes)]
                 jobs.append(("gen-pusht", [*args, "--steps", str(s.steps)]))
+        self._run(jobs + self._learn_data_jobs())
+
+    def _gen_job(self, world: str, episodes: int) -> tuple[str, list[str]]:
+        args = ["gen", str(self.data / world), "--world", world, "--episodes", str(episodes)]
+        return f"gen-{world}", [*args, "--steps", str(self.sizes.steps)]
+
+    def _learn_data_jobs(self) -> list[tuple[str, list[str]]]:
         agent = self.data / "pusht-agent"
-        if self.eval_v2 is not None and not (agent / "rollouts.npz").exists():
-            args = ["learn-data", str(agent), "--run", str(self.eval_v2)]
-            jobs.append(
-                ("learn-data", args + (["--limit", str(s.learn_limit)] if s.learn_limit else []))
-            )
-        self._run(jobs)
+        if self.eval_v2 is None or (agent / "rollouts.npz").exists():
+            return []
+        args = ["learn-data", str(agent), "--run", str(self.eval_v2)]
+        limit = self.sizes.learn_limit
+        return [("learn-data", args + (["--limit", str(limit)] if limit else []))]
 
     def stage_baseline_evals(self) -> None:
         """Episodes that need no new world model, in the background: alone and with the real
@@ -280,6 +286,10 @@ class Pipeline:
     def stage_translators(self) -> dict:
         """Specialists, the shared translator (3 worlds), a trunk on 2 worlds and the transfer
         test on billiards; Gate 3 picks the translator each new world's agent reads with."""
+        self._train_translators()
+        return self._gate3()
+
+    def _train_translators(self) -> None:
         s, d, r = self.sizes, self.data, self.runs
         steps = ["--steps", str(s.translator_steps)]
         specialists = [
@@ -317,7 +327,6 @@ class Pipeline:
                 "--steps", str(s.transfer_steps),
             ]  # fmt: skip
             self._run([("transfer", args)])
-        return self._gate3()
 
     def _gate3(self) -> dict:
         import torch
@@ -420,6 +429,78 @@ class Pipeline:
         if (r / "pusht-ft" / "wm_eval.json").exists():
             extra = ["--task-seed", str(FT_TASK_SEED), "--wm", f"ft={r / 'pusht-ft'}"]
             self._eval("eval-pusht-ft-wm", "pusht", "wm_tool@ft", extra, "pusht-ft")
+
+    # The second run (notebooks/second_run.ipynb): billiards again on the fixed physics, and
+    # the world-model evaluations the first run lost to a rendering bug. The tabletop and PushT
+    # models are kept as they are, so their datasets are not rebuilt.
+
+    def reset_billiards(self) -> None:
+        """Delete what the old billiards physics made: balls could fly off the table. Once only:
+        the marker keeps a resumed second run from deleting its own new billiards."""
+        marker = self.runs / "billiards-physics-2"
+        if marker.exists():
+            return
+        r = self.runs
+        for path in (
+            self.data / "billiards", r / "billiards", r / "billiards-spec", r / "transfer",
+            self.results / "billiards",
+        ):  # fmt: skip
+            if path.is_symlink():
+                path.unlink()
+            else:
+                shutil.rmtree(path, ignore_errors=True)
+        marker.touch()
+        print("old billiards outputs deleted: rebuilt on the fixed physics")
+
+    def stage_second_data(self) -> None:
+        """Evaluations that need no new model start in the background (billiards alone and with
+        the real physics; tabletop and the new look with the tabletop model), then the billiards
+        data and the agent's own PushT pushes."""
+        self._eval("eval-billiards-base", "billiards", "no_tool,oracle_tool")
+        self._evals_with_models()
+        jobs = [] if (self.data / "billiards" / "rollouts.npz").exists() else [
+            self._gen_job("billiards", self.sizes.episodes)
+        ]  # fmt: skip
+        self._run(jobs + self._learn_data_jobs())
+
+    def stage_billiards_translator(self) -> dict:
+        """Billiards' own translator and the transfer test. The shared translator is not trained
+        again (it needs every world's latents): billiards reads with its specialist."""
+        self._train_translators()
+        r = self.runs
+        (r / "billiards").mkdir(exist_ok=True)
+        shutil.copy(r / "billiards-spec" / "translator.pt", r / "billiards" / "translator.pt")
+        path = self.results / "translators.json"
+        summary = json.loads(path.read_text()) if path.exists() else {"translators": {}}
+        spec = json.loads((r / "billiards-spec" / "translator_eval.json").read_text())
+        summary.setdefault("gate3", {})["billiards"] = "specialist (shared not retrained)"
+        summary["translators"]["billiards"] = {"specialist": spec["billiards"]["test"]}
+        summary["transfer"] = json.loads((r / "transfer" / "transfer.json").read_text())
+        path.write_text(json.dumps(summary, indent=1))
+        e = spec["billiards"]["test"]
+        print(f"billiards translator: {e['px_median']:.1f} px median, {e['px_p90']:.1f} px p90")
+        return summary
+
+    def stage_learning_check(self) -> None:
+        """Learning from use, fairly: v2 and the fine-tuned predictor on the same held-out
+        pushes the agent chose."""
+        agent, ft = self.data / "pusht-agent", self.runs / "pusht-ft"
+        if self.wm_v2 is None or not (agent / "latents.json").exists():
+            return
+        for tag, wm in (("v2", self.wm_v2), ("ft", ft)):
+            out = ft / f"wm_eval_agent_{tag}.json"
+            if not out.exists():
+                args = ["wm-eval", str(agent), "--wm", str(wm), "--out", str(out)]
+                self._run([(f"wm-eval-agent-{tag}", args)])
+
+    def run_second(self) -> Path:
+        self.reset_billiards()
+        self.stage_second_data()
+        self.stage_encode()
+        self.stage_billiards_translator()
+        self.stage_predictors()
+        self.stage_learning_check()
+        return self.stage_finish()
 
     def stage_finish(self) -> Path:
         """Wait for every evaluation, write the reports, pack runs + results + logs."""

@@ -208,13 +208,17 @@ def pipeline(
         Path | None, typer.Option(help="PushT dataset with latents; generated if absent.")
     ] = None,
     gpus: int = typer.Option(0, help="GPUs to spread GPU steps over (0: CPU)."),
-    provider: str = typer.Option("meta", help="meta | dry (scripted agent, no API)."),
+    provider: str = typer.Option("meta", help="meta | local | dry (scripted agent, no API)."),
     eval_workers: int = 6,
+    second: bool = typer.Option(
+        False, help="The second run, on a finished first run in WORK (notebooks/second_run.ipynb)."
+    ),
 ) -> None:
     """The whole overnight run, stage after stage. See notebooks/overnight.ipynb."""
     from jat.pipeline import Pipeline
 
-    Pipeline(work, size, wm_v2, eval_v2, pusht_data, gpus, provider, eval_workers).run_all()
+    p = Pipeline(work, size, wm_v2, eval_v2, pusht_data, gpus, provider, eval_workers)
+    p.run_second() if second else p.run_all()
 
 
 @app.command()
@@ -321,6 +325,9 @@ def wm_eval(
     head: Annotated[
         str | None, typer.Option(help="Read with this world's head. Default: the data's world.")
     ] = None,
+    out: Annotated[
+        Path | None, typer.Option(help="JSON file. Default: <wm>/wm_eval_<world>.json.")
+    ] = None,
 ) -> None:
     """Imagined state vs true state after 0, 1, 2, ... pushes. No LLM."""
     import json
@@ -339,7 +346,8 @@ def wm_eval(
         data_, predictor, translator, {"val": VAL, "test": TEST}[split], head=head
     )
     typer.echo(format_rows(rows))
-    (wm / f"wm_eval_{data_.world}.json").write_text(json.dumps({split: rows}, indent=1))
+    out = out or wm / f"wm_eval_{data_.world}.json"
+    out.write_text(json.dumps({split: rows}, indent=1))
 
 
 @app.command(name="eval")

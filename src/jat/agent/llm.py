@@ -15,7 +15,11 @@ from langchain_openai import ChatOpenAI
 PROVIDERS = {
     "baseten": ("BASETEN_API_KEY", "BASETEN_BASE_URL", "BASETEN_MODEL"),
     "meta": ("META_API_KEY", "META_API_BASE_URL", "META_MODEL"),
+    # An open-weights model on our own GPU, behind vLLM's OpenAI-compatible server
+    "local": ("LOCAL_API_KEY", "LOCAL_BASE_URL", "LOCAL_MODEL"),
 }
+# Seconds per request. One GPU serving many episodes at once answers slower than an API.
+TIMEOUTS = {"local": 1200}
 
 _DRY_PUSHES = [
     {"start": [60.0, 60.0], "end": [160.0, 160.0]},
@@ -61,5 +65,5 @@ def chat_model(provider: str, temperature: float) -> BaseChatModel:
         base_url=os.environ[url_var],
         temperature=temperature,
         max_retries=4,
-        timeout=180,
+        timeout=TIMEOUTS.get(provider, 180),
     )
