@@ -67,3 +67,13 @@ def test_the_t_is_visible_where_it_stands(can_render):
         frame = TABLETOP.render(geo.pose_from_center(x, y, 0.5))
         changed = np.abs(frame.astype(int) - empty).sum(-1) > 60
         assert changed.sum() > 150  # the T covers a few hundred pixels at least
+
+
+def test_frames_drawn_from_many_threads_are_the_same(can_render):
+    from concurrent.futures import ThreadPoolExecutor
+
+    world = get_world("tabletop")
+    pose = [256.0, 240.0, 0.4]
+    with ThreadPoolExecutor(6) as pool:  # the evaluation runner's workers render like this
+        frames = list(pool.map(lambda _: world.render(pose), range(12)))
+    assert all(np.array_equal(f, frames[0]) for f in frames)

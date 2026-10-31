@@ -97,6 +97,7 @@ def job_env(gpu: int | None) -> dict[str, str]:
 # One job per GPU, started like the pipeline's own jobs: CUDA, V-JEPA 2's config, MuJoCo
 # physics and rendering of both 3D worlds, the CLI.
 _JOB_CHECK = """
+from concurrent.futures import ThreadPoolExecutor
 import torch
 from jat.cli import app
 from jat.wm.encoder import VJEPA2_ID
@@ -107,14 +108,17 @@ x = torch.ones(1024, device="cuda" if torch.cuda.is_available() else "cpu").sum(
 tabletop = get_world("tabletop").render([256.0, 200.0, 0.0])
 billiards = get_world("billiards").render([150.0, 256.0, 400.0, 100.0])
 assert tabletop.std() > 5 and billiards.std() > 5, "blank frames"
-print(f"{{device}}, renders ok ({{tabletop.shape[0]}} px)")
+with ThreadPoolExecutor(4) as pool:  # evaluation workers render from several threads
+    frames = list(pool.map(lambda _: get_world("tabletop").render([256.0, 200.0, 0.0]), range(8)))
+assert all((f == tabletop).all() for f in frames), "frames differ between threads"
+print(f"{{device}}, renders ok ({{tabletop.shape[0]}} px, from 4 threads too)")
 """
 
 
 def preflight(gpus: int = 0) -> None:
     """Checks everything the run needs before the run needs it: every jat module imports in
     this process, and a job on each GPU (started exactly like the pipeline's jobs) sees CUDA
-    and renders both 3D worlds. Raises if anything fails."""
+    and renders both 3D worlds, from several threads too. Raises if anything fails."""
     import importlib
     import pkgutil
 

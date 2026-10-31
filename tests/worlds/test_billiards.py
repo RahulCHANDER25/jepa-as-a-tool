@@ -28,6 +28,25 @@ def test_the_white_ball_can_move_the_red_one():
     assert run.hit == {"white"} and run.result.state[2] > 300 + 5
 
 
+def on_table(state) -> bool:
+    return bool(np.all((np.asarray(state) > 0) & (np.asarray(state) < 512)))
+
+
+def test_a_ball_pinned_against_a_cushion_stays_on_the_table():
+    pinned = [46.0, 462.0, 38.0, 233.0]  # the stroke drives the white ball into the left cushion
+    result = BILLIARDS.push(pinned, Push(start=(109.0, 446.0), end=(24.0, 452.0)))
+    assert result.moved and on_table(result.state)
+
+
+def test_random_strokes_keep_the_balls_on_the_table():
+    rng = np.random.default_rng(0)
+    for _ in range(8):
+        state = BILLIARDS.random_start(rng)
+        for _ in range(8):
+            state = BILLIARDS.push(state, BILLIARDS.aimed_push(state, rng)).state
+            assert on_table(state)
+
+
 def test_stroke_is_deterministic_and_misses_change_nothing():
     push = Push(start=(100.0, 256.0), end=(250.0, 256.0))
     assert BILLIARDS.push(APART, push).state == BILLIARDS.push(APART, push).state

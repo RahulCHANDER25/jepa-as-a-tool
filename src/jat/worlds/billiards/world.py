@@ -1,6 +1,7 @@
 """Billiards on the 3D table: a white and a red ball. The pusher becomes a cue: it moves along
-the stroke in a fixed time, so a longer stroke hits harder. Balls roll, hit each other and
-bounce off the cushions, then slow down and stop. The state is the two balls' positions.
+the stroke in a fixed time, so a longer stroke hits harder, and withdraws once it has struck a
+ball. Balls roll, hit each other and bounce off the cushions, then slow down and stop. The state
+is the two balls' positions.
 
 Tasks: put the red ball at a goal point. The goal is where a random strike sent it, so every
 task is solvable; families differ in how that strike got it there (directly, off a cushion,
@@ -30,8 +31,11 @@ from jat.worlds.table3d import scene as s3d
 
 RADIUS = 25.0  # px = mm
 NAMES = ("white", "red")
-TIMESTEP = 0.004  # solref time constants below stay >= 2 steps, as MuJoCo requires
+TIMESTEP = 0.002  # contacts span 4 steps: at 2, a ball gains energy at each bounce
 STROKE_TIME = 0.25  # s: every stroke takes this long, so its length sets its speed
+# How long the cue stays on a ball, then it withdraws. A cue that keeps pushing a ball held by a
+# cushion drives it into the cushion, which then fires it off the table.
+STRIKE_TIME = 0.02  # s
 SETTLE_MAX = 5.0  # s
 REST_SPEED = 0.005  # m/s
 LOG_EVERY = 0.1  # s
@@ -193,22 +197,30 @@ class Billiards:
         hit, cushion = set(), set()
         trajectory = []
         cue = push.start
+        stroke_end = stroke_steps  # the cue withdraws once it has struck
+        struck = 0  # steps the cue has spent on a ball
+        strike_steps = round(STRIKE_TIME / TIMESTEP)
         for i in range(1, stroke_steps + round(SETTLE_MAX / TIMESTEP) + 1):
-            if i <= stroke_steps:
+            if i <= stroke_end:
                 target = start + (end - start) * i / stroke_steps
                 data.mocap_pos[0] = [*target, s3d.PUSHER_Z]
                 cue = s3d.from_world(*target)
-            elif i == stroke_steps + 1:
+            elif i == stroke_end + 1:
                 data.mocap_pos[0] = s3d.PARKED
             mj.mj_step(model, data)
+            on_ball = False
             for c in data.contact[: data.ncon]:
                 pair = {c.geom1, c.geom2}
                 for geom, name in ball_of.items():
                     if geom in pair:
                         if g["pusher"] in pair:
                             hit.add(name)
+                            on_ball = True
                         if pair & rims:
                             cushion.add(name)
+            struck += on_ball
+            if struck >= strike_steps and i < stroke_end:
+                stroke_end = i  # a strike, not a shove
             if i % log_every == 0:
                 trajectory.append((*cue, *self._state(data)))
             speeds = [np.linalg.norm(data.qvel[6 * k : 6 * k + 3]) for k in range(len(NAMES))]

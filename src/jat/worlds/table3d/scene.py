@@ -8,6 +8,7 @@ the table surface at Z = 0. A screen angle theta (clockwise, y downward) is a ya
 import math
 import os
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 import cv2
@@ -177,10 +178,11 @@ def scene_xml(
 
 
 class Scene:
-    """One compiled model with per-thread simulation data and one shared renderer.
+    """One compiled model with per-thread simulation data and one renderer.
 
     Physics is plain CPU MuJoCo and runs anywhere. Rendering needs an OpenGL context: set
-    MUJOCO_GL=egl on a headless GPU machine (Kaggle), glfw on a desktop.
+    MUJOCO_GL=egl on a headless GPU machine (Kaggle), glfw on a desktop. A context is current on
+    one thread at a time (EGL refuses to share it), so every frame is drawn on one GL thread.
     """
 
     def __init__(self, xml: str):
@@ -189,7 +191,7 @@ class Scene:
         self.mujoco = mujoco
         self.model = mujoco.MjModel.from_xml_string(xml)
         self._local = threading.local()
-        self._render_lock = threading.Lock()
+        self._gl = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mujoco-gl")
         self._renderer = None
         self._render_data = None
 
@@ -203,17 +205,20 @@ class Scene:
     def render(self, place, size: int) -> np.ndarray:
         """uint8 [size, size, 3]. `place(data)` sets the objects' qpos; the pusher stays parked.
         Always drawn at RENDER_SIZE, then resized: a second GL context breaks the first."""
-        with self._render_lock:  # one GL context, made current by whichever thread renders
-            if self._renderer is None:
-                self._renderer = self.mujoco.Renderer(self.model, RENDER_SIZE, RENDER_SIZE)
-                self._render_data = self.mujoco.MjData(self.model)
-            data = self._render_data
-            self.mujoco.mj_resetData(self.model, data)
-            place(data)
-            data.mocap_pos[0] = PARKED
-            self.mujoco.mj_forward(self.model, data)
-            self._renderer.update_scene(data, camera="main")
-            frame = self._renderer.render().copy()
+        frame = self._gl.submit(self._draw, place).result()
         if size != RENDER_SIZE:
             frame = cv2.resize(frame, (size, size), interpolation=cv2.INTER_AREA)
         return frame
+
+    def _draw(self, place) -> np.ndarray:
+        """Runs on the GL thread only."""
+        if self._renderer is None:
+            self._renderer = self.mujoco.Renderer(self.model, RENDER_SIZE, RENDER_SIZE)
+            self._render_data = self.mujoco.MjData(self.model)
+        data = self._render_data
+        self.mujoco.mj_resetData(self.model, data)
+        place(data)
+        data.mocap_pos[0] = PARKED
+        self.mujoco.mj_forward(self.model, data)
+        self._renderer.update_scene(data, camera="main")
+        return self._renderer.render().copy()
