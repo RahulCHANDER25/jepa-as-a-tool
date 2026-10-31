@@ -70,7 +70,7 @@ cp .env.example .env                        # then set META_API_KEY
 
 Interrupted evaluations resume: finished episodes are skipped.
 
-**All four worlds in one run:** [`notebooks/overnight.ipynb`](notebooks/overnight.ipynb) (Kaggle,
+**All four worlds in one run:** [`notebooks/train_four_worlds.ipynb`](notebooks/train_four_worlds.ipynb) (Kaggle,
 2 × T4, ~8–9 h) trains the tabletop and billiards world models, the shared translator and the
 transfer test, fine-tunes PushT on the agent's own imagined pushes, and runs every evaluation.
 `uv run jat pipeline --work /tmp/dry --size small --provider dry --wm-v2 runs/wm-v2 --eval-v2

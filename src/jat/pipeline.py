@@ -6,7 +6,7 @@ last attempt stopped. Long steps run as `jat` subprocesses with their own log in
 GPU steps spread over the GPUs; evaluations run in the background as soon as what they need
 exists (episodes without the world model start right away).
 
-notebooks/overnight.ipynb runs one stage per cell. `jat pipeline --size small --provider dry`
+notebooks/train_four_worlds.ipynb runs one stage per cell. `jat pipeline --size small --provider dry`
 runs everything at toy sizes with a scripted agent: a dry run with no API and no GPU.
 """
 
@@ -430,13 +430,13 @@ class Pipeline:
             extra = ["--task-seed", str(FT_TASK_SEED), "--wm", f"ft={r / 'pusht-ft'}"]
             self._eval("eval-pusht-ft-wm", "pusht", "wm_tool@ft", extra, "pusht-ft")
 
-    # The second run (notebooks/second_run.ipynb): billiards again on the fixed physics, and
-    # the world-model evaluations the first run lost to a rendering bug. The tabletop and PushT
+    # On a finished run (notebooks/rebuild_billiards.ipynb): billiards again on the fixed
+    # physics, and the world-model evaluations a rendering bug had stopped. The tabletop and PushT
     # models are kept as they are, so their datasets are not rebuilt.
 
     def reset_billiards(self) -> None:
         """Delete what the old billiards physics made: balls could fly off the table. Once only:
-        the marker keeps a resumed second run from deleting its own new billiards."""
+        the marker keeps a resumed run from deleting its own new billiards."""
         marker = self.runs / "billiards-physics-2"
         if marker.exists():
             return
@@ -452,7 +452,7 @@ class Pipeline:
         marker.touch()
         print("old billiards outputs deleted: rebuilt on the fixed physics")
 
-    def stage_second_data(self) -> None:
+    def stage_billiards_data(self) -> None:
         """Evaluations that need no new model start in the background (billiards alone and with
         the real physics; tabletop and the new look with the tabletop model), then the billiards
         data and the agent's own PushT pushes."""
@@ -493,9 +493,9 @@ class Pipeline:
                 args = ["wm-eval", str(agent), "--wm", str(wm), "--out", str(out)]
                 self._run([(f"wm-eval-agent-{tag}", args)])
 
-    def run_second(self) -> Path:
+    def run_rebuild_billiards(self) -> Path:
         self.reset_billiards()
-        self.stage_second_data()
+        self.stage_billiards_data()
         self.stage_encode()
         self.stage_billiards_translator()
         self.stage_predictors()

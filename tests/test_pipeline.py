@@ -18,6 +18,6 @@ def test_the_old_billiards_is_deleted_once_only(tmp_path):
         path.touch()
     p.reset_billiards()
     assert not (p.runs / "billiards").exists() and keep.exists()
-    (p.runs / "billiards").mkdir()  # the second run's new billiards
+    (p.runs / "billiards").mkdir()  # the rebuilt billiards
     p.reset_billiards()
     assert (p.runs / "billiards").exists()

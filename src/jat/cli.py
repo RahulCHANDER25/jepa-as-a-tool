@@ -210,15 +210,15 @@ def pipeline(
     gpus: int = typer.Option(0, help="GPUs to spread GPU steps over (0: CPU)."),
     provider: str = typer.Option("meta", help="meta | local | dry (scripted agent, no API)."),
     eval_workers: int = 6,
-    second: bool = typer.Option(
-        False, help="The second run, on a finished first run in WORK (notebooks/second_run.ipynb)."
+    rebuild_billiards: bool = typer.Option(
+        False, help="On a finished run in WORK: billiards on the fixed physics, the evaluations."
     ),
 ) -> None:
-    """The whole overnight run, stage after stage. See notebooks/overnight.ipynb."""
+    """The whole run, stage after stage. See notebooks/train_four_worlds.ipynb."""
     from jat.pipeline import Pipeline
 
     p = Pipeline(work, size, wm_v2, eval_v2, pusht_data, gpus, provider, eval_workers)
-    p.run_second() if second else p.run_all()
+    p.run_rebuild_billiards() if rebuild_billiards else p.run_all()
 
 
 @app.command()
