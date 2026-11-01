@@ -48,9 +48,10 @@ look world="":
 look-3d world="billiards":
     uv run jat show --world {{world}} --interactive
 
-# Website. Copy an eval run and the world-model tables into web/public/data
-export-web run="results/eval-wm-v2":
-    uv run jat export-web --run {{run}} --wm v1=runs/wm --wm v2=runs/wm-v2
+# Website. Copy eval runs and world-model tables into web/public/data, each as name=folder:
+#   just export-web --run pusht=results/pusht --run billiards=results/billiards --wm main=runs/wm
+export-web *args:
+    uv run jat export-web {{args}}
 
 # Serve the website with live reload
 web:

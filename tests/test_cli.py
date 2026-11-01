@@ -37,7 +37,7 @@ def test_unknown_world_is_refused(tmp_path):
 
 
 def test_export_web_rejects_a_model_without_a_name(tmp_path):
-    result = runner.invoke(app, ["export-web", "--run", str(tmp_path), "--wm", "runs/wm"])
+    result = runner.invoke(app, ["export-web", "--run", f"pusht={tmp_path}", "--wm", "runs/wm"])
     assert result.exit_code != 0 and "name=folder" in result.output
 
 

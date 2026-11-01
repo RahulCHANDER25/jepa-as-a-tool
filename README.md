@@ -66,7 +66,7 @@ cp .env.example .env                        # then set META_API_KEY
 | World-model accuracy | `uv run jat wm-eval data/random-12k --wm runs/wm-v2` | GPU, minutes |
 | Agent evaluation | [`notebooks/experiments/eval_wm_v2.ipynb`](notebooks/experiments/eval_wm_v2.ipynb), or `META_MODEL=muse-spark-1.3-contributor uv run jat eval --out results/eval-wm-v2 --families translate,rotate,pose --n 50 --settings no_tool,wm_tool,oracle_tool --wm runs/wm-v2` | CPU, ~2–3 h, ~$5–9 |
 | Tables and paired tests | `uv run jat report results/eval-wm-v2` | seconds |
-| Website data | `just export-web results/eval-wm-v2`, then `just web` | seconds |
+| Website data | `just export-web --run pusht=results/eval-wm-v2 --wm v2=runs/wm-v2`, then `just web` | seconds |
 
 Interrupted evaluations resume: finished episodes are skipped.
 

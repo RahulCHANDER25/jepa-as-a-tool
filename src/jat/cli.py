@@ -442,7 +442,10 @@ def report(run: Annotated[Path, typer.Argument(help="Run folder written by `jat 
 
 @app.command(name="export-web")
 def export_web(
-    run: Annotated[Path, typer.Option(help="Run folder written by `jat eval`.")],
+    run: Annotated[
+        list[str],
+        typer.Option(help="name=folder of a run written by `jat eval`, e.g. pusht=results/pusht."),
+    ],
     wm: Annotated[
         list[str], typer.Option(help="name=folder of a world-model run, e.g. v2=runs/wm-v2.")
     ] = [],  # noqa: B006 (typer reads the default, never mutates it)
@@ -451,11 +454,15 @@ def export_web(
     """Copy results and episode logs into the website data folder."""
     from jat.eval.export import export_web as export
 
-    models = {}
-    for item in wm:
-        name, sep, folder = item.partition("=")
-        if not sep:
-            raise typer.BadParameter(f"expected name=folder, got {item!r}")
-        models[name] = Path(folder)
-    n = export(run, models, out)
-    typer.echo(f"{n} episodes, results and {len(models)} world-model tables -> {out}")
+    def named(items: list[str]) -> dict[str, Path]:
+        folders = {}
+        for item in items:
+            name, sep, folder = item.partition("=")
+            if not sep:
+                raise typer.BadParameter(f"expected name=folder, got {item!r}")
+            folders[name] = Path(folder)
+        return folders
+
+    runs, models = named(run), named(wm)
+    n = export(runs, models, out)
+    typer.echo(f"{n} episodes of {len(runs)} runs, {len(models)} world-model tables -> {out}")
