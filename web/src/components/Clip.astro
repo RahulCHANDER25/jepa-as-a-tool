@@ -1,0 +1,25 @@
+---
+// A looping 3D clip (web/public/clips/<name>.mp4, from `jat clip`) with a numbered caption.
+// Renders nothing until the clip exists.
+import { hasClip } from "../lib/data";
+
+interface Props {
+  name: string;
+  label: string;
+}
+const { name, label } = Astro.props;
+const BASE = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+---
+
+{
+  hasClip(name) && (
+    <figure class="clip">
+      <video src={`${BASE}clips/${name}.mp4`} autoplay muted loop playsinline aria-label={label} />
+      {Astro.slots.has("default") && (
+        <figcaption class="numbered">
+          <slot />
+        </figcaption>
+      )}
+    </figure>
+  )
+}

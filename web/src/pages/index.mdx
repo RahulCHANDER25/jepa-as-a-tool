@@ -1,7 +1,7 @@
 ---
 layout: ../layouts/Article.astro
 title: Imagine before you push
-subtitle: Can an LLM agent test its moves in a learned world model before it acts?
+subtitle: An LLM agent that imagines each push in a V-JEPA 2 world model before it acts, and solves more tasks for it on the tabletop and on PushT.
 description: Muse Spark plans pushes by imagining them first, with a world model built on Meta's V-JEPA 2, in a 2D world, two 3D worlds and a room it never saw.
 authors: ["Rahul Chander"]
 published: November 4, 2026
@@ -17,7 +17,7 @@ links:
   tabletop-new-look, and later the open-model run) and an episode id from
   web/public/data/episodes/<run>/index.json. A missing run or episode fails the build.
 
-  After the final run: re-export, then re-read every sentence marked CHECK.
+  After a new run: re-export, re-render the clips (`jat clip`), then re-read every sentence marked CHECK.
 */}
 
 import EpisodePlayer from "../components/EpisodePlayer.astro";
@@ -32,21 +32,21 @@ import Stat from "../components/Stat.astro";
 import DreamTable from "../components/DreamTable.astro";
 import Note from "../components/Note.astro";
 import OpenModel from "../components/OpenModel.astro";
+import Clip from "../components/Clip.astro";
+
+<p class="lede">
+  On a 3D tabletop, Muse Spark solves <Stat run="tabletop" setting="no_tool" /> of the pushing tasks
+  on its own and <Stat run="tabletop" setting="wm_tool" /> when it can first imagine its pushes in a
+  world model built on V-JEPA 2. Agents that act in the physical world need to ask "what happens if I
+  do this?" before they act; this gives any LLM agent a learned world model to ask.
+</p>
 
 <div class="hero">
-  <WorldTabs
-    compact
-    autoplay
-    episodes={[
-      { run: "pusht", id: "rotate-0-012__wm_tool__s0" },
-      { run: "tabletop", id: "pose-0-032__wm_tool__s0" },
-      { run: "billiards", id: "carom-0-046__wm_tool__s0" },
-    ]}
-  >
-    Before each real push, the agent imagines: it asks a world model what several candidate pushes
-    would do (blue), keeps the best one (green), and only then pushes for real. Dashed outlines show
-    where the real physics would put the object.
-  </WorldTabs>
+  <Clip name="hero" label="The agent imagines several pushes on the 3D tabletop, picks one, then pushes for real">
+    Before each real push, the agent asks the world model what several pushes would do
+    (see-through), keeps one (green), and only then pushes for real (white pusher). The gold
+    outline is the goal; the caption is the agent's own words.
+  </Clip>
 </div>
 
 ## Introduction
@@ -106,8 +106,8 @@ another room.
     { run: "tabletop-new-look", id: "rotate-0-001__wm_tool__s0" },
   ]}
 >
-  The four worlds, each replaying one episode from above. All four share one 512 × 512 px table
-  and the same push action.
+  The four worlds, one episode each: PushT from above, the 3D worlds as their camera sees them.
+  All four share one 512 × 512 px table and the same push action.
 </WorldCards>
 
 ## Watch it think

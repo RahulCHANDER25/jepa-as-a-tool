@@ -481,6 +481,21 @@ figcaption.numbered > p {
   max-width: 560px;
   margin: 8px auto 40px;
 }
+.lede {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  margin: 24px 0 16px;
+}
+.clip {
+  margin: 0;
+}
+.clip video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
 
 /* One card per world */
 .cards {
