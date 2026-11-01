@@ -52,9 +52,13 @@ def _run_entry(name: str, logs: list[EpisodeLog]) -> dict:
 
 def _test_rows(folder: Path) -> dict[str, list]:
     """A world model's test rows per world. Models trained before there were several worlds
-    store one list, for PushT."""
+    store one list, for PushT. Worlds evaluated after training (`jat wm-eval`, e.g. one the
+    model never saw) sit next to it as wm_eval_<world>.json."""
     test = json.loads((folder / "wm_eval.json").read_text())["test"]
-    return test if isinstance(test, dict) else {"pusht": test}
+    rows = test if isinstance(test, dict) else {"pusht": test}
+    for path in sorted(folder.glob("wm_eval_*.json")):
+        rows[path.stem.removeprefix("wm_eval_")] = json.loads(path.read_text())["test"]
+    return rows
 
 
 def export_web(runs: dict[str, Path], models: dict[str, Path], out: Path) -> int:

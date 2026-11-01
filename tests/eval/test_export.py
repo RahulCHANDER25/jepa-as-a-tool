@@ -25,6 +25,7 @@ def test_export_writes_tables_and_every_episode_per_run(tmp_path):
     (old / "wm_eval.json").write_text(json.dumps({"test": [{"horizon": 0}]}))
     new.mkdir()
     (new / "wm_eval.json").write_text(json.dumps({"test": {"billiards": [{"horizon": 1}]}}))
+    (new / "wm_eval_tabletop-new-look.json").write_text(json.dumps({"test": [{"horizon": 2}]}))
 
     assert export_web(runs, {"v1": old, "v2": new}, out) == 4
     entries = {r["name"]: r for r in json.loads((out / "results.json").read_text())["runs"]}
@@ -34,10 +35,10 @@ def test_export_writes_tables_and_every_episode_per_run(tmp_path):
         index = json.loads((out / "episodes" / name / "index.json").read_text())
         assert all((out / "episodes" / name / f"{e['id']}.json").exists() for e in index)
     models = json.loads((out / "horizon.json").read_text())["models"]
-    # a single-world table is PushT's
+    # a single-world table is PushT's; a world evaluated later has its own file
     assert [m["worlds"] for m in models] == [
         {"pusht": [{"horizon": 0}]},
-        {"billiards": [{"horizon": 1}]},
+        {"billiards": [{"horizon": 1}], "tabletop-new-look": [{"horizon": 2}]},
     ]
 
 
