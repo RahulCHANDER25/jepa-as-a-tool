@@ -238,6 +238,7 @@ def export_dream(
     wm: Annotated[str, typer.Option(help="World model run folder or hf:<owner>/<repo>/<run>.")],
     out: Annotated[Path, typer.Option(help="Folder for the browser, e.g. web/public/dream/pusht.")],
     starts: int = typer.Option(12, help="Start states, taken from the world's evaluation tasks."),
+    world: str | None = typer.Option(None, help="World to export. Default: the first trained on."),
 ) -> None:
     """Dream mode: the predictor and translator as ONNX for the browser, with V-JEPA 2
     latents of a few start states."""
@@ -247,7 +248,9 @@ def export_dream(
     from jat.wm.dream import export_dream as export
     from jat.wm.models import WorldModel
 
-    world_model = WorldModel.load(resolve_run(wm))
+    if world:
+        _world(world)
+    world_model = WorldModel.load(resolve_run(wm), world=world)
     families = list(islice(cycle(world_model.world.families), starts))
     states = [world_model.world.sample_task(f, 0, i).start for i, f in enumerate(families)]
     manifest = export(world_model, states, out)
