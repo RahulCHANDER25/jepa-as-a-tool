@@ -40,7 +40,7 @@ import OpenModel from "../components/OpenModel.astro";
     episodes={[
       { run: "pusht", id: "rotate-0-012__wm_tool__s0" },
       { run: "tabletop", id: "pose-0-032__wm_tool__s0" },
-      { run: "billiards", id: "carom-0-002__oracle_tool__s0", label: "Billiards (3D) · real physics" },
+      { run: "billiards", id: "carom-0-046__wm_tool__s0" },
     ]}
   >
     Before each real push, the agent imagines: it asks a world model what several candidate pushes
@@ -95,17 +95,15 @@ true physics.
 
 ## Four worlds
 
-{/* CHECK after the final run: the main run trains one predictor on all three worlds. */}
-
 The world model is trained on three worlds and tested on a fourth it never saw: the tabletop in
 another room.
 
 <WorldCards
   episodes={[
     { run: "pusht", id: "rotate-0-020__wm_tool__s0" },
-    { run: "tabletop", id: "rotate-0-041__wm_tool__s0" },
-    { run: "billiards", id: "shot-0-018__oracle_tool__s0" },
-    { run: "tabletop-new-look", id: "rotate-0-017__no_tool__s0" },
+    { run: "tabletop", id: "rotate-0-028__wm_tool__s0" },
+    { run: "billiards", id: "shot-0-043__wm_tool__s0" },
+    { run: "tabletop-new-look", id: "rotate-0-001__wm_tool__s0" },
   ]}
 >
   The four worlds, each replaying one episode from above. All four share one 512 × 512 px table
@@ -122,7 +120,7 @@ the plan it keeps; each _Push_ is a real push on the table.
   episodes={[
     { run: "pusht", id: "pose-0-032__wm_tool__s0" },
     { run: "tabletop", id: "rotate-0-003__wm_tool__s0" },
-    { run: "billiards", id: "bank-0-041__oracle_tool__s0", label: "Billiards (3D) · real physics" },
+    { run: "billiards", id: "bank-0-050__wm_tool__s0" },
   ]}
 >
   One episode per world, with the agent's own words. Toggle "show the real outcome" to compare each
@@ -148,8 +146,6 @@ Each push starts from the last imagined one, so you can follow a whole dream.
 
 ## Results
 
-{/* CHECK after the final run: the sentences under the chart. */}
-
 Muse Spark on every world, in three settings: alone, with our world model, and with the real
 physics engine behind the same tool (the best case for the tool). Every setting plays the same
 tasks.
@@ -157,15 +153,28 @@ tasks.
 <ResultsChart runs={["pusht", "tabletop", "billiards"]} />
 
 - **The tool works.** With the real physics behind it, the agent solves
-  <Stat run="pusht" setting="oracle_tool" /> of the PushT tasks and
+  <Stat run="pusht" setting="oracle_tool" /> of the PushT tasks,
+  <Stat run="tabletop" setting="oracle_tool" /> of the tabletop tasks and
   <Stat run="billiards" setting="oracle_tool" /> of the billiards tasks, against
-  <Stat run="pusht" setting="no_tool" /> and <Stat run="billiards" setting="no_tool" /> alone.
-- **On PushT, turning is where the world model helps most.** On turn tasks the agent solves
-  <Stat run="pusht" setting="wm_tool" family="rotate" /> with the world model against
-  <Stat run="pusht" setting="no_tool" family="rotate" /> alone: on the same tasks it wins
-  <Stat run="pusht" setting="wm_tool" family="rotate" value="won" /> that it loses alone and loses
-  <Stat run="pusht" setting="wm_tool" family="rotate" value="lost" /> that it wins alone
-  (<Stat run="pusht" setting="wm_tool" family="rotate" value="p" />).
+  <Stat run="pusht" setting="no_tool" />, <Stat run="tabletop" setting="no_tool" /> and
+  <Stat run="billiards" setting="no_tool" /> alone.
+- **The world model helps on the tabletop and on PushT.** On the tabletop the agent solves
+  <Stat run="tabletop" setting="wm_tool" /> with the world model against
+  <Stat run="tabletop" setting="no_tool" /> alone: on the same tasks it wins
+  <Stat run="tabletop" setting="wm_tool" value="won" /> that it loses alone and loses
+  <Stat run="tabletop" setting="wm_tool" value="lost" /> that it wins alone
+  (<Stat run="tabletop" setting="wm_tool" value="p" />). On PushT:
+  <Stat run="pusht" setting="wm_tool" /> against <Stat run="pusht" setting="no_tool" />, won
+  <Stat run="pusht" setting="wm_tool" value="won" />, lost
+  <Stat run="pusht" setting="wm_tool" value="lost" />
+  (<Stat run="pusht" setting="wm_tool" value="p" />).
+- **On billiards it does not help yet:** <Stat run="billiards" setting="wm_tool" /> with the world
+  model against <Stat run="billiards" setting="no_tool" /> alone, won
+  <Stat run="billiards" setting="wm_tool" value="won" />, lost
+  <Stat run="billiards" setting="wm_tool" value="lost" />
+  (<Stat run="billiards" setting="wm_tool" value="p" />). With the real physics behind the
+  same tool it solves <Stat run="billiards" setting="oracle_tool" />, so the gap is in the world
+  model, not in the agent.
 - **It uses the tool heavily:** about <Stat run="pusht" setting="wm_tool" value="imagined" />
   imagined pushes per PushT task, for <Stat run="pusht" setting="wm_tool" value="pushes" /> real
   ones. The price is tokens: <Stat run="pusht" setting="wm_tool" value="tokens" /> per task with the
@@ -174,8 +183,10 @@ tasks.
 Per task family on PushT:
 
 <ResultsChart byFamily="pusht">
-  PushT by task family: move, turn, and both. Move is easy to guess; turning is where imagining
-  first pays off.
+  PushT by task family. Turning is where the world model gains most: won
+  <Stat run="pusht" setting="wm_tool" family="rotate" value="won" />, lost
+  <Stat run="pusht" setting="wm_tool" family="rotate" value="lost" />
+  (<Stat run="pusht" setting="wm_tool" family="rotate" value="p" />).
 </ResultsChart>
 
 ## How far ahead can it imagine?
@@ -206,7 +217,7 @@ tool reads a scene it does not know.
   imagination.
 </HorizonChart>
 
-<Compare run="tabletop-new-look" task="rotate-0-049">
+<Compare run="tabletop-new-look" task="rotate-0-001">
   A new-room task the agent solves alone and fails with the world model.
 </Compare>
 
@@ -233,10 +244,10 @@ Three things that broke on the way, and what they taught us.
 ## Limits
 
 - **Errors add up over a chain.** The accuracy chart above shows it in every world. The agent
-  sometimes notices: _"The real result differed from prediction, so I'll explore new pushes from
-  the current position."_ Here it still runs out of pushes, on a task it solves alone.
+  sometimes notices: _"The last result was weaker than predicted, so I'll try longer pushes to cover
+  the distance."_ Here it still runs out of pushes, on a task it solves alone.
 
-<EpisodePlayer run="pusht" episode="pose-0-030__wm_tool__s0">
+<EpisodePlayer run="pusht" episode="pose-0-071__wm_tool__s0">
   A PushT task where the predictions drift and the agent runs out of pushes.
 </EpisodePlayer>
 
