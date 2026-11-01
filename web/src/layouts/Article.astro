@@ -2,9 +2,16 @@
 import "../styles/global.css";
 
 interface Props {
-  frontmatter: { title: string; subtitle: string; description: string };
+  frontmatter: {
+    title: string;
+    subtitle: string;
+    description: string;
+    authors: string[];
+    published: string;
+    links: { label: string; href: string }[];
+  };
 }
-const { title, subtitle, description } = Astro.props.frontmatter;
+const { title, subtitle, description, authors, published, links } = Astro.props.frontmatter;
 ---
 
 <!doctype html>
@@ -47,17 +54,26 @@ const { title, subtitle, description } = Astro.props.frontmatter;
       <span data-theme-label>Theme</span>
     </button>
     <main class="article">
-      <h1>{title}</h1>
-      <p class="subtitle">{subtitle}</p>
-      <p class="byline">
-        A Meta Global AI Developer Hackathon project ·
-        <a href="https://github.com/RahulCHANDER25/jepa-as-a-tool">code on GitHub</a>
-      </p>
+      <header class="masthead">
+        <h1>{title}</h1>
+        <p class="subtitle">{subtitle}</p>
+        <dl class="byline">
+          <div><dt>Authors</dt><dd>{authors.join(", ")}</dd></div>
+          <div><dt>Context</dt><dd>Meta Global AI Developer Hackathon</dd></div>
+          <div><dt>Published</dt><dd>{published}</dd></div>
+          <div>
+            <dt>Links</dt>
+            <dd>{links.map((l, i) => <>{i > 0 && " · "}<a href={l.href}>{l.label}</a></>)}</dd>
+          </div>
+        </dl>
+      </header>
       <slot />
       <footer class="footer">
         Built during the hackathon, Oct 27 – Nov 4, 2026. PushT physics from
-        <a href="https://github.com/huggingface/gym-pusht">gym-pusht</a>, encoder
-        <a href="https://github.com/facebookresearch/vjepa2">V-JEPA 2</a>, agent Muse Spark.
+        <a href="https://github.com/huggingface/gym-pusht">gym-pusht</a>, 3D worlds in
+        <a href="https://mujoco.org">MuJoCo</a>, encoder
+        <a href="https://github.com/facebookresearch/vjepa2">V-JEPA 2</a>, agent Muse Spark. Page layout
+        after <a href="https://worldmodels.github.io">World Models</a> (Ha &amp; Schmidhuber, 2018).
       </footer>
     </main>
     <script>

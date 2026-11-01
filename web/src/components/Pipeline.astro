@@ -1,18 +1,193 @@
 ---
-// How one imagined push flows through the system.
+// How one imagined push flows through the system, drawn by hand: the real frame goes through
+// V-JEPA 2 once; pushes chain in latent space; the translator turns each latent into text.
+// Shapes from src/jat/wm/encoder.py and models.py. The default slot is the caption.
 ---
 
 <figure class="pipeline wide">
-  <ol class="pipe">
-    <li class="pipe-box"><b>Table image</b><span>256 × 256, rendered from the pose</span></li>
-    <li class="pipe-box meta"><b>V-JEPA 2</b><span>Meta's video encoder, frozen</span></li>
-    <li class="pipe-box"><b>Latent</b><span>64 tokens × 1,024 numbers</span></li>
-    <li class="pipe-box trained"><b>Predictor</b><span>latent + push → next latent</span></li>
-    <li class="pipe-box trained"><b>Translator</b><span>latent → T position and angle</span></li>
-    <li class="pipe-box meta"><b>Muse Spark</b><span>reads the text, picks the next pushes</span></li>
-  </ol>
-  <figcaption>
-    <span class="key meta"></span> Meta model &nbsp; <span class="key trained"></span> trained during the
-    hackathon. Imagined frames never become images again: chains of pushes stay in latent space.
+  <div class="scroll">
+  <svg viewBox="0 0 1000 380" role="img" aria-labelledby="pipe-title pipe-desc">
+    <title id="pipe-title">The world model behind the simulate tool</title>
+    <desc id="pipe-desc">
+      A table image goes through V-JEPA 2, frozen, into a latent of 64 tokens by 1,024 numbers. The
+      predictor takes a latent and a push and gives the next latent, again and again. The
+      translator reads each latent and writes the state as text for the LLM, which sends back the
+      next plans.
+    </desc>
+    <defs>
+      <marker id="pipe-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" class="ink-fill" />
+      </marker>
+    </defs>
+
+    <!-- the real frame -->
+    <g transform="translate(20,40)">
+      <rect width="120" height="120" rx="8" class="table-fill" />
+      <path d="M38,44 h44 v11 h-16.5 v33 h-11 v-33 h-16.5 z" class="t-fill" transform="rotate(-18 60 60)" />
+      <text x="60" y="142" class="label">real frame</text>
+      <text x="60" y="160" class="sub">256 × 256 px</text>
+    </g>
+    <path d="M150,100 h46" class="flow" marker-end="url(#pipe-arrow)" />
+
+    <!-- V-JEPA 2 -->
+    <g transform="translate(205,50)">
+      <rect width="130" height="100" rx="10" class="box meta" />
+      <text x="65" y="44" class="name">V-JEPA 2</text>
+      <text x="65" y="66" class="sub">ViT-L, frozen</text>
+      <text x="65" y="84" class="sub">Meta</text>
+    </g>
+    <path d="M345,100 h46" class="flow" marker-end="url(#pipe-arrow)" />
+
+    <!-- the latent: an 8 x 8 token grid -->
+    <g transform="translate(400,40)">
+      {
+        Array.from({ length: 64 }, (_, i) => (
+          <rect x={(i % 8) * 15} y={Math.floor(i / 8) * 15} width="12" height="12" rx="2" class="token" />
+        ))
+      }
+      <text x="58" y="142" class="label">latent z₀</text>
+      <text x="58" y="160" class="sub">64 tokens × 1,024</text>
+    </g>
+
+    <!-- predictor chain -->
+    <path d="M530,100 h40" class="flow" marker-end="url(#pipe-arrow)" />
+    <g transform="translate(578,50)">
+      <rect width="130" height="100" rx="10" class="box trained" />
+      <text x="65" y="40" class="name">Predictor</text>
+      <text x="65" y="62" class="sub">z + push → next z</text>
+      <text x="65" y="80" class="sub">6-layer transformer</text>
+    </g>
+    <path d="M610,6 v36" class="flow push" marker-end="url(#pipe-arrow)" />
+    <text x="600" y="22" class="sub end">push (start → end)</text>
+    <path d="M718,100 h40" class="flow" marker-end="url(#pipe-arrow)" />
+    <g transform="translate(766,62)">
+      {
+        Array.from({ length: 16 }, (_, i) => (
+          <rect x={(i % 4) * 19} y={Math.floor(i / 4) * 19} width="15" height="15" rx="2" class="token imagined" />
+        ))
+      }
+      <text x="36" y="98" class="label">ẑ₁, ẑ₂, …</text>
+    </g>
+    <path d="M880,100 h20 q20,0 20,-20 v-40 q0,-20 -20,-20 h-210 q-10,0 -10,10 v12" class="flow loop" marker-end="url(#pipe-arrow)" />
+    <text x="940" y="64" class="sub left">chain</text>
+    <text x="940" y="80" class="sub left">pushes</text>
+
+    <!-- translator and the LLM -->
+    <path d="M800,150 v50" class="flow" marker-end="url(#pipe-arrow)" />
+    <g transform="translate(720,210)">
+      <rect width="160" height="80" rx="10" class="box trained" />
+      <text x="80" y="34" class="name">Translator</text>
+      <text x="80" y="56" class="sub">latent → state</text>
+    </g>
+    <path d="M710,250 h-90" class="flow" marker-end="url(#pipe-arrow)" />
+    <g transform="translate(320,212)">
+      <rect width="300" height="76" rx="10" class="box text-box" />
+      <text x="16" y="30" class="mono">I2 = R0 + push (190, 248) → (190, 348)</text>
+      <text x="16" y="52" class="mono">T center (250, 376), angle 327°</text>
+    </g>
+    <path d="M320,250 h-90" class="flow" marker-end="url(#pipe-arrow)" />
+    <g transform="translate(60,210)">
+      <rect width="160" height="80" rx="10" class="box meta" />
+      <text x="80" y="34" class="name">Muse Spark</text>
+      <text x="80" y="56" class="sub">the agent (LLM)</text>
+    </g>
+    <path d="M140,300 v40 h503 v-190" class="flow plans" marker-end="url(#pipe-arrow)" />
+    <text x="390" y="358" class="sub">simulate(from_frame, plans): the next pushes to imagine</text>
+  </svg>
+  </div>
+  <figcaption class="numbered">
+    <slot>
+      <span class="key meta"></span> Meta model &nbsp; <span class="key trained"></span> trained during
+      the hackathon. The image goes through V-JEPA 2 once. Imagined pushes stay in latent space: no
+      image is ever generated. The LLM only reads the translator's text.
+    </slot>
   </figcaption>
 </figure>
+
+<style>
+  /* on a phone the diagram keeps a readable size and scrolls sideways */
+  .scroll {
+    overflow-x: auto;
+  }
+  .pipeline svg {
+    min-width: 720px;
+    display: block;
+    width: 100%;
+    height: auto;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .box {
+    fill: var(--surface);
+    stroke: var(--axis);
+    stroke-width: 1.5;
+  }
+  .box.meta {
+    stroke: var(--meta);
+    stroke-width: 2.5;
+  }
+  .box.trained {
+    stroke: var(--trained);
+    stroke-width: 2.5;
+  }
+  .text-box {
+    stroke-dasharray: 4 3;
+  }
+  .table-fill {
+    fill: var(--table);
+    stroke: var(--axis);
+  }
+  .t-fill {
+    fill: var(--t-real);
+  }
+  .token {
+    fill: var(--meta);
+    opacity: 0.55;
+  }
+  .token.imagined {
+    fill: var(--ghost);
+    opacity: 0.35;
+    stroke: var(--ghost);
+  }
+  .flow {
+    fill: none;
+    stroke: var(--muted);
+    stroke-width: 2;
+  }
+  .flow.loop,
+  .flow.plans {
+    stroke-dasharray: 5 4;
+  }
+  .flow.push {
+    stroke: var(--pusher);
+  }
+  .ink-fill {
+    fill: var(--muted);
+  }
+  text {
+    text-anchor: middle;
+    fill: var(--text);
+  }
+  .name {
+    font-size: 17px;
+    font-weight: 650;
+  }
+  .label {
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .sub {
+    font-size: 12.5px;
+    fill: var(--text-secondary);
+  }
+  .left {
+    text-anchor: start;
+  }
+  .end {
+    text-anchor: end;
+  }
+  .mono {
+    text-anchor: start;
+    font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+    fill: var(--text-secondary);
+  }
+</style>

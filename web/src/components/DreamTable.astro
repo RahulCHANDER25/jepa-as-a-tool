@@ -1,13 +1,29 @@
 ---
-// Dream mode: push the T yourself, the V-JEPA 2 world model imagines the result in your
-// browser. `worlds`: bundles in web/public/dream/<world>, written by `jat export-dream`.
+// Dream mode: push the T (or strike a ball) yourself, the V-JEPA 2 world model imagines the
+// result in your browser. Without any bundle the figure is left out. A world appears once `jat export-dream` wrote its bundle into
+// web/public/dream/<world>. The default slot is the caption.
+import { hasDream, WORLD_NAMES } from "../lib/data";
+
 interface Props {
   worlds?: string[];
 }
-const { worlds = ["pusht"] } = Astro.props;
+const { worlds = ["pusht", "tabletop", "billiards"] } = Astro.props;
+const ready = worlds.filter(hasDream);
 ---
 
-<figure class="dream" data-dream data-worlds={worlds.join(",")}>
+{ready.length > 0 && (
+<figure class="dream" data-dream data-worlds={ready.join(",")}>
+  {
+    ready.length > 1 && (
+      <div class="tab-row" role="group" aria-label="World">
+        {ready.map((w, i) => (
+          <button type="button" data-world={w} aria-pressed={i === 0 ? "true" : "false"}>
+            {WORLD_NAMES[w] ?? w}
+          </button>
+        ))}
+      </div>
+    )
+  }
   <div class="stage">
     <canvas role="img" aria-label="A table: drag on it to push; the world model draws what it imagines"></canvas>
     <button type="button" class="wake" data-wake>Wake the world model</button>
@@ -18,9 +34,10 @@ const { worlds = ["pusht"] } = Astro.props;
   <div class="controls">
     <button type="button" data-back>↺ Back to the start</button>
     <button type="button" data-next>Next start ›</button>
-    {worlds.length > 1 && worlds.map((w) => <button type="button" data-world={w}>{w}</button>)}
   </div>
+  {Astro.slots.has("default") && <figcaption class="numbered"><slot /></figcaption>}
 </figure>
+)}
 
 <style>
   .dream {

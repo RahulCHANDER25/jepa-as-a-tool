@@ -3,7 +3,7 @@
 // visitor draws is imagined by the predictor and read by the translator, both in ONNX.
 
 import { drawScene, fitCanvas, type Ghost } from "./draw";
-import type { Point, Pose } from "./episode";
+import type { Point, State } from "./world";
 import { onThemeChange } from "./theme";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/?$/, "/");
@@ -88,37 +88,6 @@ function legal(start: Point, end: Point): [Point, Point] {
   return [s, [clamp(s[0] + dx), clamp(s[1] + dy)]];
 }
 
-function drawBalls(canvas: HTMLCanvasElement, layers: { state: number[]; alpha: number }[], arrow?: [Point, Point]) {
-  const ctx = canvas.getContext("2d")!;
-  const style = getComputedStyle(canvas);
-  const scale = canvas.width / 512;
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  ctx.fillStyle = style.getPropertyValue("--table").trim();
-  ctx.fillRect(0, 0, 512, 512);
-  const colors = ["#e8e6dc", "#c62828"];
-  for (const { state, alpha } of layers) {
-    for (let b = 0; b < state.length / 2; b++) {
-      ctx.globalAlpha = alpha;
-      ctx.beginPath();
-      ctx.arc(state[2 * b], state[2 * b + 1], 25, 0, Math.PI * 2);
-      ctx.fillStyle = colors[b % colors.length];
-      ctx.fill();
-      ctx.strokeStyle = "#555";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-    }
-  }
-  ctx.globalAlpha = 1;
-  if (arrow) {
-    ctx.strokeStyle = style.getPropertyValue("--pusher").trim();
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(...arrow[0]);
-    ctx.lineTo(...arrow[1]);
-    ctx.stroke();
-  }
-}
-
 export function mountDreams() {
   for (const root of document.querySelectorAll<HTMLElement>("[data-dream]:not([data-mounted])")) {
     root.dataset.mounted = "1";
@@ -135,29 +104,26 @@ function mount(root: HTMLElement) {
   let dreamer: Dreamer | null = null;
   let world = worlds[0];
   let start = 0;
-  let chain: { z: Float32Array; state: number[]; push?: [Point, Point] }[] = [];
+  let chain: { z: Float32Array; state: State; push?: [Point, Point] }[] = [];
   let drag: [Point, Point] | null = null;
   let busy = false;
 
-  const isT = () => dreamer?.manifest.readout === "t_pose";
-
   function draw() {
     if (!dreamer) return;
-    const states = chain.map((c) => c.state);
-    const last = chain[chain.length - 1];
-    if (isT()) {
-      const ghosts: Ghost[] = chain.slice(1).map((c, i) => ({
-        pose: c.state as Pose,
-        label: `I${i + 1}`,
-        strong: i === chain.length - 2,
-        chosen: i === chain.length - 2,
-        push: c.push && { start: c.push[0], end: c.push[1] },
-      }));
-      drawScene(canvas, { real: states[0] as Pose, ghosts, showTruth: false, realPush: drag ? { start: drag[0], end: drag[1] } : undefined });
-    } else {
-      const layers = chain.map((c, i) => ({ state: c.state, alpha: i === 0 ? 0.35 : i === chain.length - 1 ? 1 : 0.2 }));
-      drawBalls(canvas, layers.length > 1 ? layers : [{ state: last.state, alpha: 1 }], drag ?? undefined);
-    }
+    const ghosts: Ghost[] = chain.slice(1).map((c, i) => ({
+      pose: c.state,
+      label: `I${i + 1}`,
+      strong: i === chain.length - 2,
+      chosen: i === chain.length - 2,
+      push: c.push && { start: c.push[0], end: c.push[1] },
+    }));
+    drawScene(canvas, {
+      world: dreamer.manifest.world,
+      real: chain[0].state,
+      ghosts,
+      showTruth: false,
+      realPush: drag ? { start: drag[0], end: drag[1] } : undefined,
+    });
   }
 
   async function reset(i: number) {
@@ -171,6 +137,9 @@ function mount(root: HTMLElement) {
 
   async function load(name: string) {
     world = name;
+    root.querySelectorAll<HTMLButtonElement>("[data-world]").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.world === name)),
+    );
     status.textContent = `Loading the ${name} world model (about 20 MB)…`;
     wake.disabled = true;
     try {

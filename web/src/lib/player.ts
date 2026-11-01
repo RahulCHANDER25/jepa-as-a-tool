@@ -2,7 +2,8 @@
 
 import { drawScene, fitCanvas, type Ghost, type Scene } from "./draw";
 import { onThemeChange } from "./theme";
-import { buildSteps, frameMap, loadEpisode, type Point, type Pose, type Step } from "./episode";
+import { buildSteps, frameMap, loadEpisode, worldOf, type Step } from "./episode";
+import type { Point, State } from "./world";
 
 const STEP_MS = 2400; // pause on a step while playing
 const ROW_MS = 110; // one trajectory row = 0.1 s of physics, shown slightly slower
@@ -30,6 +31,7 @@ export function mountPlayers() {
 
 async function mount(root: HTMLElement) {
   const episode = await loadEpisode(root.dataset.episode!);
+  const world = worldOf(episode);
   const frames = frameMap(episode);
   const steps = buildSteps(episode);
   const compact = root.dataset.compact === "1";
@@ -61,8 +63,9 @@ async function mount(root: HTMLElement) {
   }
 
   /** `t` in 0..1: how far the step's entrance animation is (1 = still picture). */
-  function scene(step: Step, real: Pose, pusher?: Point, t = 1): Scene {
+  function scene(step: Step, real: State, pusher?: Point, t = 1): Scene {
     const base: Scene = {
+      world,
       goal: episode.task.goal,
       real,
       ghosts: [],
@@ -155,7 +158,7 @@ async function mount(root: HTMLElement) {
         return;
       }
       const row = rows[Math.max(i, 0)];
-      draw(scene(step, [row[2], row[3], row[4]], [row[0], row[1]]));
+      draw(scene(step, row.slice(2), [row[0], row[1]]));
       animation = requestAnimationFrame(tick);
     };
     draw(scene(step, truePose(step.previous), push.start));

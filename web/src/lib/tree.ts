@@ -1,17 +1,10 @@
 // Imagination tree: every frame of an episode, real ones as the trunk, imagined ones as branches.
 // Selecting a frame draws it with the path that led to it.
 
-import { drawScene, fitCanvas, toWorld, type Ghost, type Scene } from "./draw";
+import { drawScene, fitCanvas, type Ghost, type Scene } from "./draw";
 import { onThemeChange } from "./theme";
-import { frameMap, loadEpisode, pushText, type Frame, type Pose } from "./episode";
-
-function error(a: Pose, b: Pose): string {
-  const [ax, ay] = toWorld(a, [0, 45]);
-  const [bx, by] = toWorld(b, [0, 45]);
-  const px = Math.hypot(ax - bx, ay - by);
-  const turn = Math.abs((((a[2] - b[2] + Math.PI) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
-  return `${Math.round(px)} px, ${Math.round((turn * 180) / Math.PI)}°`;
-}
+import { frameMap, loadEpisode, pushText, worldOf, type Frame } from "./episode";
+import { gapText } from "./world";
 
 const samePush = (a: Frame["push"], b: Frame["push"]) =>
   !!a && !!b && [...a.start, ...a.end].every((v, i) => Math.abs(v - [...b.start, ...b.end][i]) < 0.5);
@@ -26,6 +19,8 @@ export function mountTrees() {
 async function mount(root: HTMLElement) {
   const episode = await loadEpisode(root.dataset.episode!);
   const frames = frameMap(episode);
+  const world = worldOf(episode);
+  const error = (f: Frame) => gapText(world, f.pose, f.true_pose);
   const canvas = root.querySelector<HTMLCanvasElement>("canvas")!;
   const list = root.querySelector<HTMLElement>("[data-list]")!;
   const caption = root.querySelector<HTMLElement>("[data-caption]")!;
@@ -58,11 +53,11 @@ async function mount(root: HTMLElement) {
     for (let p = f; p.kind === "imagined"; p = frames.get(p.parent!)!) {
       path.unshift({ pose: p.pose, truth: p.true_pose, label: p.id, strong: p.id === id, push: p.push ?? undefined });
     }
-    const s: Scene = { goal: episode.task.goal, real: realAncestor(id).true_pose, ghosts: path, showTruth: truth.checked };
+    const s: Scene = { world, goal: episode.task.goal, real: realAncestor(id).true_pose, ghosts: path, showTruth: truth.checked };
     drawScene(canvas, s);
     caption.textContent = f.kind === "real"
       ? `${id}: the real table${f.push ? ` after the push ${pushText(f.push)}` : " at the start"}.`
-      : `${id}: imagined from ${f.parent} with the push ${pushText(f.push!)}. The world model is off by ${error(f.pose, f.true_pose)}.`;
+      : `${id}: imagined from ${f.parent} with the push ${pushText(f.push!)}. The world model is off by ${error(f)}.`;
   }
 
   function node(f: Frame): HTMLLIElement {
@@ -71,7 +66,7 @@ async function mount(root: HTMLElement) {
     button.type = "button";
     button.className = `node node-${f.kind}${taken.has(f.id) ? " taken" : ""}`;
     button.textContent = f.id;
-    button.title = f.kind === "real" ? "real frame" : `off by ${error(f.pose, f.true_pose)}`;
+    button.title = f.kind === "real" ? "real frame" : `off by ${error(f)}`;
     if (taken.has(f.id)) button.setAttribute("aria-description", "this push was then run for real");
     button.addEventListener("click", () => select(f.id));
     buttons.set(f.id, button);

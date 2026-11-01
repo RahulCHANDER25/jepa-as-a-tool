@@ -1,0 +1,52 @@
+---
+// One episode per world behind tabs. Only the visible player loads its canvas size and plays.
+// Episodes of runs that were not exported are left out, so the tabs follow the data.
+import EpisodePlayer from "./EpisodePlayer.astro";
+import { hasRun, run as runOf, WORLD_NAMES } from "../lib/data";
+
+interface Props {
+  episodes: { run: string; id: string; label?: string }[];
+  compact?: boolean;
+  autoplay?: boolean;
+  wide?: boolean;
+}
+const { episodes, compact = false, autoplay = false, wide = false } = Astro.props;
+const shown = episodes
+  .filter((e) => hasRun(e.run))
+  .map((e) => ({ ...e, label: e.label ?? WORLD_NAMES[runOf(e.run).world] ?? e.run }));
+---
+
+<figure class:list={["world-tabs", { wide, compact }]} data-tabs>
+  {
+    shown.length > 1 && (
+      <div class="tab-row" role="tablist" aria-label="World">
+        {shown.map((e, i) => (
+          <button type="button" role="tab" aria-selected={i === 0 ? "true" : "false"} data-tab={i}>
+            {e.label}
+          </button>
+        ))}
+      </div>
+    )
+  }
+  {
+    shown.map((e, i) => (
+      <div role="tabpanel" data-panel={i} hidden={i !== 0}>
+        <EpisodePlayer run={e.run} episode={e.id} compact={compact} autoplay={autoplay} />
+      </div>
+    ))
+  }
+  {Astro.slots.has("default") && <figcaption class="numbered"><slot /></figcaption>}
+</figure>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>("[data-tabs]")) {
+    const tabs = root.querySelectorAll<HTMLButtonElement>("[data-tab]");
+    const panels = root.querySelectorAll<HTMLElement>("[data-panel]");
+    tabs.forEach((tab) =>
+      tab.addEventListener("click", () => {
+        tabs.forEach((t) => t.setAttribute("aria-selected", String(t === tab)));
+        panels.forEach((p) => (p.hidden = p.dataset.panel !== tab.dataset.tab));
+      }),
+    );
+  }
+</script>

@@ -1,35 +1,46 @@
 ---
-// Success rate per setting with its 95% interval, one panel per task family.
-import results from "../../public/data/results.json";
+// Success rate per setting with its 95% interval and the paired test against the LLM alone.
+// One panel per run (default: every exported run, one family), or with `byFamily`, one panel
+// per task family of that run. The default slot is the caption.
+import { FAMILY_NAMES, pairedRow, pct, pText, run as runOf, runs as allRuns, SETTINGS, WORLD_NAMES } from "../lib/data";
 
-const SETTINGS = [
-  ["no_tool", "LLM alone"],
-  ["wm_tool", "LLM + world model"],
-  ["oracle_tool", "LLM + real physics"],
-  ["random", "Random pushes"],
-] as const;
-const FAMILIES = [
-  ["all", "All tasks"],
-  ["translate", "Move"],
-  ["rotate", "Turn"],
-  ["pose", "Move and turn"],
-] as const;
-const pct = (v: number) => `${Math.round(v * 100)}%`;
-const panels = FAMILIES.map(([family, title]) => ({
-  title,
-  rows: SETTINGS.flatMap(([setting, label]) => {
-    const row = results.rows.find((r) => r.family === family && r.setting === setting);
-    return row ? [{ setting, label, ...row }] : [];
-  }),
-})).filter((p) => p.rows.length > 0);
-// "All tasks" repeats the single family when there is only one
-const shown = panels.length === 2 ? panels.slice(1) : panels;
+interface Props {
+  runs?: string[];
+  family?: string;
+  byFamily?: string;
+  by?: "world" | "agent"; // panel titles
+}
+const { runs = allRuns.map((r) => r.name), family = "all", byFamily, by = "world" } = Astro.props;
+
+const agentName = (model: string | null) =>
+  (model ?? "random").replace(/-contributor$/, "").replace(/^muse-(\w+)/, (_, n) => `Muse ${n[0].toUpperCase()}${n.slice(1)}`);
+const title = (name: string) => {
+  const r = runOf(name);
+  return by === "agent" ? agentName(r.agent) : (WORLD_NAMES[r.world] ?? r.world);
+};
+
+const cells = byFamily
+  ? [...new Set(runOf(byFamily).rows.map((r) => r.family))]
+      .sort((a, b) => (a === "all" ? -1 : b === "all" ? 1 : 0))
+      .map((f) => ({ run: byFamily, family: f, title: FAMILY_NAMES[f] ?? f }))
+  : runs.map((name) => ({ run: name, family, title: title(name) }));
+
+const panels = cells
+  .map((c) => ({
+    ...c,
+    rows: SETTINGS.flatMap(([setting, label]) => {
+      const row = runOf(c.run).rows.find((r) => r.family === c.family && r.setting === setting);
+      return row ? [{ setting, label, ...row }] : [];
+    }),
+    test: pairedRow(c.run, "wm_tool", c.family),
+  }))
+  .filter((p) => p.rows.length > 0);
 ---
 
 <figure class="results wide">
   <div class="results-panels">
     {
-      shown.map((panel) => (
+      panels.map((panel) => (
         <section class="results-panel" aria-label={panel.title}>
           <h4>
             {panel.title} <span class="muted">· {panel.rows[0].n} tasks</span>
@@ -40,7 +51,7 @@ const shown = panels.length === 2 ? panels.slice(1) : panels;
               <span
                 class="bar-track"
                 tabindex="0"
-                data-tip={`${r.label} · ${panel.title}\nSuccess ${pct(r.success_rate)} of ${r.n}\n95% range ${pct(r.ci_low)}–${pct(r.ci_high)}\nMedian final error ${Math.round(r.position_error)} px, ${Math.round(r.angle_error)}°`}
+                data-tip={`${r.label} · ${panel.title}\nSuccess ${pct(r.success_rate)} of ${r.n}\n95% range ${pct(r.ci_low)}–${pct(r.ci_high)}\n${Math.round(r.imagined_pushes)} imagined pushes per task`}
               >
                 <span class={`bar s-${r.setting}`} style={`width:${r.success_rate * 100}%`} />
                 <span class="ci" style={`left:${r.ci_low * 100}%;width:${(r.ci_high - r.ci_low) * 100}%`} />
@@ -48,23 +59,31 @@ const shown = panels.length === 2 ? panels.slice(1) : panels;
               <span class="bar-value">{pct(r.success_rate)}</span>
             </div>
           ))}
+          {panel.test && (
+            <p class="paired">
+              With the world model vs alone, same tasks: <b>{panel.test.only_setting}</b> won only with it,{" "}
+              <b>{panel.test.only_baseline}</b> lost only with it ({pText(panel.test.p_value)}).
+            </p>
+          )}
         </section>
       ))
     }
   </div>
-  <figcaption>
-    Share of tasks solved. The thin line is the 95% range: with this many tasks, the true rate is
-    very likely inside it.
+  <figcaption class="numbered">
+    <slot>
+      Share of tasks solved. The thin line is the 95% range. The paired count only uses tasks where
+      the two settings disagree (exact McNemar test).
+    </slot>
   </figcaption>
   <details class="table-view">
     <summary>Show as a table</summary>
     <table>
       <thead>
-        <tr><th>Family</th><th>Setting</th><th>Tasks</th><th>Success</th><th>95% range</th><th>Median error</th></tr>
+        <tr><th>Panel</th><th>Setting</th><th>Tasks</th><th>Success</th><th>95% range</th><th>Imagined pushes</th><th>Tokens</th></tr>
       </thead>
       <tbody>
         {
-          shown.flatMap((panel) =>
+          panels.flatMap((panel) =>
             panel.rows.map((r) => (
               <tr>
                 <td>{panel.title}</td>
@@ -72,7 +91,8 @@ const shown = panels.length === 2 ? panels.slice(1) : panels;
                 <td>{r.n}</td>
                 <td>{pct(r.success_rate)}</td>
                 <td>{pct(r.ci_low)}–{pct(r.ci_high)}</td>
-                <td>{Math.round(r.position_error)} px, {Math.round(r.angle_error)}°</td>
+                <td>{Math.round(r.imagined_pushes)}</td>
+                <td>{Math.round(r.tokens / 1000)}k</td>
               </tr>
             )),
           )

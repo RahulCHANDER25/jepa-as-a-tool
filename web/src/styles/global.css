@@ -27,6 +27,8 @@
   --pusher: #eb6834;
   --meta: #2a78d6;
   --trained: #eda100;
+  --ball-white: #f4f2ea;
+  --ball-red: #c62828;
 }
 /* Set before first paint by the inline script in Article.astro: the saved choice, else the OS. */
 :root[data-theme="dark"] {
@@ -53,6 +55,8 @@
   --pusher: #d95926;
   --meta: #3987e5;
   --trained: #c98500;
+  --ball-white: #e8e6dc;
+  --ball-red: #d84343;
 }
 
 *,
@@ -95,10 +99,24 @@ a {
   color: var(--text-secondary);
   margin: 0 0 8px;
 }
-.article .byline {
+.byline {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px 24px;
+  margin: 24px 0 32px;
+  padding: 14px 0;
+  border-top: 1px solid var(--grid);
+  border-bottom: 1px solid var(--grid);
+  font-size: 0.9rem;
+}
+.byline dt {
   color: var(--muted);
-  font-size: 0.95rem;
-  margin: 0 0 32px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.byline dd {
+  margin: 2px 0 0;
 }
 .article h2 {
   font-size: 1.6rem;
@@ -122,6 +140,79 @@ figcaption {
   color: var(--text-secondary);
   font-size: 0.9rem;
   margin-top: 8px;
+}
+/* Figures are numbered in page order, as in a paper */
+.article {
+  counter-reset: figure;
+}
+figcaption.numbered {
+  counter-increment: figure;
+  margin-top: 12px;
+}
+figcaption.numbered::before {
+  content: "Figure " counter(figure) ". ";
+  font-weight: 650;
+  color: var(--text);
+}
+/* a caption written in MDX arrives as a paragraph: keep it on the "Figure n." line */
+figcaption.numbered > p {
+  display: inline;
+  margin: 0;
+}
+
+/* Side notes: in the margin when there is room */
+.note {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  border-left: 2px solid var(--grid);
+  padding-left: 12px;
+  margin: 12px 0;
+}
+@media (min-width: 1280px) {
+  .note {
+    float: right;
+    clear: right;
+    width: 230px;
+    margin: 4px -270px 12px 0;
+  }
+}
+.your-words {
+  border: 1px dashed var(--trained);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--text-secondary);
+}
+
+/* Tabs: worlds in the hero, the player and dream mode */
+.tab-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.tab-row button {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.tab-row button:hover {
+  border-color: var(--accent);
+}
+.tab-row button[aria-selected="true"],
+.tab-row button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.world-tabs .player {
+  margin: 0;
 }
 .wide {
   width: min(1040px, calc(100vw - 32px));
@@ -345,6 +436,18 @@ figcaption {
 .k-truth {
   border: 2px dashed var(--truth);
 }
+.k-white {
+  background: var(--ball-white);
+  border: 1px solid var(--text-secondary);
+  border-radius: 50% !important;
+}
+.k-red {
+  background: var(--ball-red);
+  border-radius: 50% !important;
+}
+.legend i.round {
+  border-radius: 50%;
+}
 .k-pusher {
   background: var(--pusher);
   border-radius: 50% !important;
@@ -362,12 +465,12 @@ figcaption {
 }
 
 /* Side by side */
-.compare {
+.compare-grid {
   display: grid;
   gap: 24px;
 }
 @media (min-width: 720px) {
-  .compare {
+  .compare-grid {
     grid-template-columns: 1fr 1fr;
   }
 }
@@ -375,8 +478,53 @@ figcaption {
   margin: 0;
 }
 .hero {
-  max-width: 520px;
-  margin: 24px auto 40px;
+  max-width: 560px;
+  margin: 8px auto 40px;
+}
+
+/* One card per world */
+.cards {
+  display: grid;
+  gap: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+.card h4 {
+  margin: 10px 0 4px;
+  font-size: 1rem;
+}
+.card p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.card .player {
+  margin: 0;
+}
+.card .stage .caption {
+  display: none;
+}
+.card video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.tag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  vertical-align: middle;
+  color: var(--s-oracle_tool);
+  border: 1px solid currentColor;
+}
+.tag.unseen {
+  color: var(--s-no_tool);
 }
 
 /* Imagination tree */
@@ -510,6 +658,11 @@ figcaption {
 .ci::after {
   right: 0;
 }
+.paired {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
 .bar-value {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -523,9 +676,18 @@ figcaption {
 }
 
 /* Line chart */
+.horizon-panels {
+  display: grid;
+  gap: 16px 40px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+}
+.horizon-panels h4 {
+  margin: 0;
+  font-size: 1rem;
+}
 .horizon-chart {
   width: 100%;
-  min-height: 280px;
+  min-height: 220px;
 }
 .horizon-chart svg {
   display: block;
@@ -618,61 +780,7 @@ figcaption {
   white-space: nowrap;
 }
 
-/* Pipeline diagram */
-.pipe {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: 10px 28px;
-}
-.pipe-box {
-  position: relative;
-  flex: 1 1 140px;
-  display: flex;
-  flex-direction: column;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  border-top: 3px solid var(--axis);
-  background: var(--surface);
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-}
-.pipe-box b {
-  color: var(--text);
-  font-size: 0.95rem;
-}
-.pipe-box.meta {
-  border-top-color: var(--meta);
-}
-.pipe-box.trained {
-  border-top-color: var(--trained);
-}
-.pipe-box + .pipe-box::before {
-  content: "→";
-  position: absolute;
-  left: -21px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--muted);
-}
-@media (max-width: 640px) {
-  .pipe {
-    flex-direction: column;
-  }
-  .pipe-box + .pipe-box::before {
-    content: "↓";
-    left: 50%;
-    top: -22px;
-    transform: translateX(-50%);
-  }
-  .pipe {
-    gap: 26px;
-  }
-}
+/* Pipeline diagram keys */
 .key {
   display: inline-block;
   width: 12px;
@@ -686,6 +794,28 @@ figcaption {
   background: var(--trained);
 }
 
+.references {
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  padding-left: 1.4em;
+}
+.references li {
+  margin: 6px 0;
+}
+.article pre {
+  overflow-x: auto;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.article pre code {
+  border: 0;
+  padding: 0;
+  background: none;
+}
 .footer {
   border-top: 1px solid var(--grid);
   margin-top: 64px;
