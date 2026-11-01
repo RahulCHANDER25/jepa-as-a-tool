@@ -23,6 +23,8 @@ GOAL = (0.95, 0.75, 0.15, 0.35)
 GHOST = (0.75, 0.6, 1.0, 0.3)
 CHOSEN = (0.1, 0.85, 0.35, 0.6)
 FPS = 30
+ASCII = str.maketrans({"\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"', "\u2014": "-",
+                       "\u2013": "-", "\u2192": "->", "\u00b0": " deg"})  # fmt: skip
 
 
 def chosen_plan(log: EpisodeLog, real: str, push) -> tuple[str | None, list[FrameLog]]:
@@ -90,7 +92,9 @@ class Film:
     def _caption(self, frame: np.ndarray) -> np.ndarray:
         if not self.text:
             return frame
-        lines = textwrap.wrap(self.text, width=frame.shape[1] // 10)[:3]
+        # OpenCV's Hershey font is ASCII only: curly quotes would print as "???"
+        text = self.text.translate(ASCII).encode("ascii", "ignore").decode()
+        lines = textwrap.wrap(text, width=frame.shape[1] // 10)[:3]
         height = 14 + 22 * len(lines)
         band = frame[:height].astype(np.float32)
         frame[:height] = (band * 0.35 + 255 * 0.65).astype(np.uint8)
@@ -98,6 +102,19 @@ class Film:
             cv2.putText(frame, line, (12, 28 + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
                         (30, 30, 30), 1, cv2.LINE_AA)  # fmt: skip
         return frame
+
+
+def _last_thought_before_each_push(log: EpisodeLog) -> dict[str, str]:
+    """Real frame id -> the agent's last words before the push that made it (the turn that
+    calls `act` often has none)."""
+    said, last = {}, ""
+    for turn in log.turns:
+        last = turn.content.strip() or last
+        for call in turn.tool_calls:
+            for line in call.result.splitlines() if call.name == "act" else ():
+                if line.startswith("Current real frame: "):
+                    said[line.removeprefix("Current real frame: ").split()[0]] = last
+    return said
 
 
 def render_clip(log: EpisodeLog, out: Path, size: int = 512) -> Path:
@@ -108,6 +125,7 @@ def render_clip(log: EpisodeLog, out: Path, size: int = 512) -> Path:
     frames = {f.id: f for f in log.frames}
     goal = log.task.goal
     thoughts = [t.content.strip() for t in log.turns if t.content.strip()]
+    said = _last_thought_before_each_push(log)
     real = "R0"
     film.text = thoughts[0] if thoughts else ""
     film.shot(frames[real].true_pose, goal=goal, seconds=1.0)
@@ -117,16 +135,7 @@ def render_clip(log: EpisodeLog, out: Path, size: int = 512) -> Path:
             continue
         before = frames[frame.parent]
         chosen, candidates = chosen_plan(log, before.id, frame.push)
-        turn = next(
-            (
-                t
-                for t in log.turns
-                for c in t.tool_calls
-                if c.name == "act" and f"Current real frame: {frame.id}" in c.result.splitlines()
-            ),
-            None,
-        )
-        film.text = turn.content.strip() if turn and turn.content.strip() else film.text
+        film.text = said.get(frame.id, film.text)
         shown = sorted(candidates, key=lambda f: f.id != chosen)[: SLOTS - 1]
         for n in range(1, len(shown) + 1):  # the plans fan in
             ghosts = [(f.pose, GHOST) for f in shown[:n]]
