@@ -33,6 +33,12 @@ def _index_entry(log: EpisodeLog) -> dict:
     }
 
 
+def _pusht_rows(folder: Path) -> list[dict]:
+    """PushT test rows of a world model: one world's list, or a dict per world."""
+    test = json.loads((folder / "wm_eval.json").read_text())["test"]
+    return test["pusht"] if isinstance(test, dict) else test
+
+
 def export_web(run: Path, models: dict[str, Path], out: Path) -> int:
     """Writes results.json, horizon.json and episodes/ into `out`. Returns the episode count.
 
@@ -47,10 +53,7 @@ def export_web(run: Path, models: dict[str, Path], out: Path) -> int:
         json.dumps({"run": run.name, "rows": [r.model_dump() for r in rows]}, indent=1)
     )
 
-    horizon = [
-        {"name": name, "rows": json.loads((folder / "wm_eval.json").read_text())["test"]}
-        for name, folder in models.items()
-    ]
+    horizon = [{"name": name, "rows": _pusht_rows(folder)} for name, folder in models.items()]
     (out / "horizon.json").write_text(json.dumps({"models": horizon}, indent=1))
 
     episodes = out / "episodes"

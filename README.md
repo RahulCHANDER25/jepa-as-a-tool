@@ -62,19 +62,19 @@ cp .env.example .env                        # then set META_API_KEY
 
 | Step | Command | Where, how long |
 |---|---|---|
-| Train the world model | [`notebooks/train_wm_v2.ipynb`](notebooks/train_wm_v2.ipynb) (`jat gen`, `jat encode`, `jat train translator`, `jat train predictor`) | GPU ≥ 15 GB, ~4–5 h |
+| Train the world model | [`notebooks/experiments/train_wm_v2.ipynb`](notebooks/experiments/train_wm_v2.ipynb) (`jat gen`, `jat encode`, `jat train translator`, `jat train predictor`) | GPU ≥ 15 GB, ~4–5 h |
 | World-model accuracy | `uv run jat wm-eval data/random-12k --wm runs/wm-v2` | GPU, minutes |
-| Agent evaluation | [`notebooks/eval_wm_v2.ipynb`](notebooks/eval_wm_v2.ipynb), or `META_MODEL=muse-spark-1.3-contributor uv run jat eval --out results/eval-wm-v2 --families translate,rotate,pose --n 50 --settings no_tool,wm_tool,oracle_tool --wm runs/wm-v2` | CPU, ~2–3 h, ~$5–9 |
+| Agent evaluation | [`notebooks/experiments/eval_wm_v2.ipynb`](notebooks/experiments/eval_wm_v2.ipynb), or `META_MODEL=muse-spark-1.3-contributor uv run jat eval --out results/eval-wm-v2 --families translate,rotate,pose --n 50 --settings no_tool,wm_tool,oracle_tool --wm runs/wm-v2` | CPU, ~2–3 h, ~$5–9 |
 | Tables and paired tests | `uv run jat report results/eval-wm-v2` | seconds |
 | Website data | `just export-web results/eval-wm-v2`, then `just web` | seconds |
 
 Interrupted evaluations resume: finished episodes are skipped.
 
-**All four worlds in one run:** [`notebooks/train_four_worlds.ipynb`](notebooks/train_four_worlds.ipynb) (Kaggle,
-2 × T4, ~8–9 h) trains the tabletop and billiards world models, the shared translator and the
-transfer test, fine-tunes PushT on the agent's own imagined pushes, and runs every evaluation.
-`uv run jat pipeline --work /tmp/dry --size small --provider dry --wm-v2 runs/wm-v2 --eval-v2
-results/eval-wm-v2` runs the same stages at toy sizes on a CPU, with a scripted agent: no GPU, no API.
+**The main run:** [`notebooks/train_and_evaluate.ipynb`](notebooks/train_and_evaluate.ipynb) (Kaggle,
+2 × T4, one session) trains one world model on PushT, the tabletop and billiards at once, then
+evaluates the agent in those three worlds and in a fourth it never saw. `uv run jat pipeline --work
+/tmp/dry --size small --provider dry` runs the same stages at toy sizes on a CPU, with a scripted
+agent: no GPU, no API. The runs that led to it are in [`notebooks/experiments`](notebooks/experiments).
 
 ## Worlds
 
@@ -119,8 +119,8 @@ top view of the table with the imagined states.
 | `src/jat/tool` | the `simulate` tool, frame handles, oracle and world-model backends, top-view sketches |
 | `src/jat/agent` | prompts, LLM client, agent loop, episode logs |
 | `src/jat/eval` | evaluation grid, metrics, website export, learning from use |
-| `src/jat/pipeline.py`, `mcp_server.py`, `clip.py`, `hub.py` | the overnight run, the MCP server, 3D videos, Hugging Face upload and download |
-| `notebooks` | GPU training and the evaluations, for Kaggle or Colab |
+| `src/jat/pipeline.py`, `mcp_server.py`, `clip.py`, `hub.py` | the main run, the MCP server, 3D videos, Hugging Face upload and download |
+| `notebooks` | the main run (Kaggle), the open-model agent (Colab); `experiments/`: the runs before |
 | `web` | the website (Astro): episode player, dream mode |
 
 ## Built during the hackathon

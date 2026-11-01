@@ -117,7 +117,9 @@ def train_translator(
 
 @train_app.command("predictor")
 def train_predictor(
-    data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
+    data: Annotated[
+        list[Path], typer.Argument(help="Dataset folders with latents, one per world.")
+    ],
     out: Annotated[Path, typer.Option(help="Run folder; the predictor is written here.")],
     steps: int = 20000,
     batch: int = 64,
@@ -134,14 +136,14 @@ def train_predictor(
     ] = None,
     extra_share: float = typer.Option(0.5, help="Share of the batches drawn from --extra."),
 ) -> None:
-    """(latent, push) -> next latent, trained over chains of pushes."""
+    """(latent, push) -> next latent, trained over chains of pushes, on one or more worlds."""
     from jat.wm import train
     from jat.wm.dataset import LatentData
     from jat.wm.encoder import default_device
 
     device = default_device()
     train.train_predictor(
-        LatentData(data, device),
+        [LatentData(folder, device) for folder in data],
         out,
         steps=steps,
         batch=batch,
@@ -202,23 +204,14 @@ def preflight(gpus: int = typer.Option(0, help="GPUs the run will use (0: CPU)."
 def pipeline(
     work: Annotated[Path, typer.Option(help="Folder for data, runs, results and logs.")],
     size: str = typer.Option("full", help="full | small (toy sizes, for a dry run)."),
-    wm_v2: Annotated[Path | None, typer.Option(help="PushT world model v2 run folder.")] = None,
-    eval_v2: Annotated[Path | None, typer.Option(help="PushT v2 evaluation folder.")] = None,
-    pusht_data: Annotated[
-        Path | None, typer.Option(help="PushT dataset with latents; generated if absent.")
-    ] = None,
     gpus: int = typer.Option(0, help="GPUs to spread GPU steps over (0: CPU)."),
     provider: str = typer.Option("meta", help="meta | local | dry (scripted agent, no API)."),
-    eval_workers: int = 6,
-    rebuild_billiards: bool = typer.Option(
-        False, help="On a finished run in WORK: billiards on the fixed physics, the evaluations."
-    ),
+    eval_workers: int = 8,
 ) -> None:
-    """The whole run, stage after stage. See notebooks/train_four_worlds.ipynb."""
+    """The main run, stage after stage. See notebooks/train_and_evaluate.ipynb."""
     from jat.pipeline import Pipeline
 
-    p = Pipeline(work, size, wm_v2, eval_v2, pusht_data, gpus, provider, eval_workers)
-    p.run_rebuild_billiards() if rebuild_billiards else p.run_all()
+    Pipeline(work, size, gpus, provider, eval_workers).run_all()
 
 
 @app.command()
@@ -396,12 +389,10 @@ def eval_(
         from jat.wm.models import WorldModel
 
         # Rendered with the task's world: an evaluation-only world uses another world's model.
-        world_models[tag] = WorldModel.load(folders[tag], default_device(), world=w.name)
-        if world_models[tag].head != w.model_world:
-            raise typer.BadParameter(
-                f"{folders[tag]} was trained on {world_models[tag].head!r}; "
-                f"{w.name!r} needs a model of {w.model_world!r}"
-            )
+        try:
+            world_models[tag] = WorldModel.load(folders[tag], default_device(), world=w.name)
+        except ValueError as error:
+            raise typer.BadParameter(str(error)) from error
 
     def model_factory():
         model = chat_model(provider, temperature)

@@ -56,8 +56,8 @@ def test_transfer_test_writes_one_row_per_budget(fake_dataset, fake_billiards, t
 def test_predictor_training_writes_a_checkpoint_and_a_horizon_table(fake_dataset):
     data = LatentData(fake_dataset, CPU)
     train_translator([data], fake_dataset, steps=20, batch=16, log_every=10)
-    rows = train_predictor(data, fake_dataset, steps=20, batch=8, rollout=2, log_every=10)
-    assert [r["horizon"] for r in rows] == [0, 1, 2, 3]
+    rows = train_predictor([data], fake_dataset, steps=20, batch=8, rollout=2, log_every=10)
+    assert [r["horizon"] for r in rows["pusht"]] == [0, 1, 2, 3]
     saved = json.loads((fake_dataset / "wm_eval.json").read_text())
     assert len(saved["history"]) == 2 and (fake_dataset / "predictor.pt").exists()
     first = saved["history"][0]
@@ -70,10 +70,10 @@ def test_fine_tune_starts_from_a_predictor_and_mixes_an_extra_dataset(fake_datas
     data = LatentData(fake_dataset, CPU)
     extra = LatentData(make_fake_dataset(tmp_path / "agent", "pusht", steps=1), CPU)
     train_translator([data], fake_dataset, steps=20, batch=16, log_every=10)
-    train_predictor(data, fake_dataset, steps=10, batch=8, log_every=10)
+    train_predictor([data], fake_dataset, steps=10, batch=8, log_every=10)
     out = tmp_path / "ft"
     train_predictor(
-        data,
+        [data],
         out,
         steps=10,
         batch=8,
@@ -84,6 +84,23 @@ def test_fine_tune_starts_from_a_predictor_and_mixes_an_extra_dataset(fake_datas
     )
     saved = json.loads((out / "wm_eval.json").read_text())
     assert "extra_test" in saved and (out / "predictor.pt").exists()
+
+
+def test_one_predictor_learns_two_worlds_and_loads_for_each(fake_dataset, fake_billiards, tmp_path):
+    import pytest
+
+    from jat.wm.models import Predictor, WorldModel
+
+    datasets = [LatentData(fake_dataset, CPU), LatentData(fake_billiards, CPU)]
+    out = tmp_path / "wm"
+    train_translator(datasets, out, steps=20, batch=16, log_every=10)
+    tests = train_predictor(datasets, out, steps=20, batch=8, rollout=2, log_every=10)
+    assert set(tests) == {"pusht", "billiards"}
+    assert set(json.loads((out / "wm_eval.json").read_text())["test"]) == {"pusht", "billiards"}
+    _, saved = load_module(Predictor, out / "predictor.pt")
+    assert saved["worlds"] == ["pusht", "billiards"]
+    with pytest.raises(ValueError, match="needs 'tabletop'"):
+        WorldModel.load(out, world="tabletop-new-look")
 
 
 def test_latents_too_big_for_ram_are_read_from_disk(fake_dataset, monkeypatch):

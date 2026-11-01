@@ -150,15 +150,19 @@ class WorldModel:
     def load(
         cls, run: Path, device: torch.device | str = "cpu", world: str | None = None
     ) -> "WorldModel":
-        """`world`: render with another world than the one trained on (evaluation only)."""
+        """`world`: the world to render and read (default: the first one trained on). An
+        evaluation-only world reads with the model of its `model_world`."""
         from jat.wm.encoder import Encoder
 
         translator, meta = load_module(Translator, run / "translator.pt", device)
         predictor, extra = load_module(Predictor, run / "predictor.pt", device)
-        encoder = Encoder(meta["latents"]["encoder"], meta["latents"]["pool"], torch.device(device))
         # Predictors trained before there were several worlds have no name: they are PushT.
-        head = extra.get("world", "pusht")
-        return cls(get_world(world or head), encoder, predictor, translator, head)
+        worlds = extra.get("worlds") or [extra.get("world", "pusht")]
+        w = get_world(world or worlds[0])
+        if w.model_world not in worlds:
+            raise ValueError(f"{run} was trained on {worlds}; {w.name!r} needs {w.model_world!r}")
+        encoder = Encoder(meta["latents"]["encoder"], meta["latents"]["pool"], torch.device(device))
+        return cls(w, encoder, predictor, translator, w.model_world)
 
     @torch.no_grad()
     def encode(self, states) -> torch.Tensor:

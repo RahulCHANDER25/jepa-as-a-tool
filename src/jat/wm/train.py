@@ -120,7 +120,7 @@ def train_translator(
 
 
 def train_predictor(
-    data: LatentData,
+    datasets: list[LatentData],
     out: Path,
     steps: int = 20000,
     batch: int = 64,
@@ -134,22 +134,29 @@ def train_predictor(
     init: Path | None = None,
     extra: LatentData | None = None,
     extra_share: float = 0.5,
-) -> list[dict]:
+) -> dict[str, list[dict]]:
     """Each sample: start from a real latent, apply `rollout` pushes in a row, feeding back the
     predictor's own output. Losses per step: latent L1 to the true latent, the world's readout
     through the frozen translator, and inverse dynamics on pushes that moved something.
 
+    `datasets`: one per world, taken in turn, one world per batch. The predictor is not told
+    the world: the latent shows it. Returns {world: test rows}.
+
     `translator_path`: the translator to read through (default: out/translator.pt).
     `init`: start from this predictor checkpoint (fine-tuning).
-    `extra`: a second dataset of the same world (e.g. the agent's own imagined pushes),
-    drawn for a share `extra_share` of the batches; its validation error joins the score."""
+    `extra`: more data of one of the worlds (e.g. the agent's own imagined pushes), drawn for a
+    share `extra_share` of the batches; its validation error joins the score."""
     torch.manual_seed(seed)
+    data = datasets[0]
+    worlds = [d.world for d in datasets]
+    if len(set(worlds)) != len(worlds):
+        raise ValueError(f"one dataset per world, got {worlds}")
     translator, _ = load_module(Translator, translator_path or out / "translator.pt", data.device)
     translator.requires_grad_(False)
-    if data.world not in translator.heads:
-        raise ValueError(f"the translator has no {data.world!r} head: {list(translator.heads)}")
-    if extra is not None and extra.world != data.world:
-        raise ValueError(f"extra data is {extra.world!r}, main data is {data.world!r}")
+    if missing := [w for w in worlds if w not in translator.heads]:
+        raise ValueError(f"the translator has no head for {missing}: {list(translator.heads)}")
+    if extra is not None and extra.world not in worlds:
+        raise ValueError(f"extra data is {extra.world!r}, the worlds are {worlds}")
     predictor = Predictor(data.n_tokens, data.dim).to(data.device)
     if init is not None:
         start, _ = load_module(Predictor, init, data.device)
@@ -162,16 +169,14 @@ def train_predictor(
     # fp16 autocast: T4 and P100 (Kaggle, Colab free) have no fast bf16
     scaler = torch.amp.GradScaler("cuda", enabled=cuda)
     autocast = (lambda: torch.autocast("cuda", dtype=torch.float16)) if cuda else nullcontext
-    sources = [(data, data.episodes(TRAIN))]
-    if extra is not None:
-        sources.append((extra, extra.episodes(TRAIN)))
-    head, readout = data.world, data.readout
+    sources = [(d, d.episodes(TRAIN)) for d in datasets]
+    extra_train = extra.episodes(TRAIN) if extra is not None else None
     best, history, started = math.inf, [], time.time()
     gen = torch.Generator().manual_seed(seed)
 
     for step in range(1, steps + 1):
         use_extra = extra is not None and torch.rand((), generator=gen).item() < extra_share
-        src, episodes = sources[1] if use_extra else sources[0]
+        src, episodes = (extra, extra_train) if use_extra else sources[step % len(sources)]
         k_steps = min(rollout, src.n_steps)
         e = episodes[torch.randint(len(episodes), (batch,), device=src.device)]
         t0 = torch.randint(src.n_steps - k_steps + 1, (batch,), device=src.device)
@@ -185,7 +190,9 @@ def train_predictor(
                 z_next = predictor(z, push)
                 losses["latent"] = losses["latent"] + F.l1_loss(z_next, target) / k_steps
                 losses["readout"] = losses["readout"] + (
-                    readout.loss(translator(z_next, head).float(), src.poses[e, t0 + k + 1])
+                    src.readout.loss(
+                        translator(z_next, src.world).float(), src.poses[e, t0 + k + 1]
+                    )
                     / k_steps
                 )
                 if k == 0 and moved.any():  # a push that missed says nothing about the push
@@ -208,11 +215,14 @@ def train_predictor(
 
         if step % log_every == 0 or step == steps:
             predictor.eval()
-            rows = rollout_errors(data, predictor, translator, VAL)
+            rows = {d.world: rollout_errors(d, predictor, translator, VAL) for d in datasets}
             extra_rows = rollout_errors(extra, predictor, translator, VAL) if extra else []
             predictor.train()
-            # Selection score: median px + median degrees, summed over the trained horizons
-            score = sum(r["px_median"] + r["deg_median"] for r in rows[1 : rollout + 1])
+            # Selection score: median px + median degrees, summed over the trained horizons and
+            # the worlds
+            score = sum(
+                r["px_median"] + r["deg_median"] for w in rows.values() for r in w[1 : rollout + 1]
+            )
             score += sum(r["px_median"] + r["deg_median"] for r in extra_rows[1:])
             history.append(
                 {"step": step, "score": score, **{k: float(v.detach()) for k, v in losses.items()}}
@@ -220,27 +230,26 @@ def train_predictor(
             mark = ""
             if score < best:
                 best, mark = score, "  * saved"
-                save_module(predictor, out / "predictor.pt", step=step, world=data.world)
+                save_module(predictor, out / "predictor.pt", step=step, worlds=worlds)
             parts = "  ".join(f"{k} {v.item():.4f}" for k, v in losses.items())
-            r1 = rows[1]
-            note = f", agent pushes {extra_rows[1]['px_median']:.1f} px" if extra_rows else ""
-            _log(
-                step,
-                steps,
-                started,
-                f"{parts}  val 1 push: {r1['px_median']:.1f} px, {r1['deg_median']:.1f}°{note}{mark}",
+            val = ", ".join(
+                f"{w} {r[1]['px_median']:.1f} px, {r[1]['deg_median']:.1f}°"
+                for w, r in rows.items()
             )
+            note = f", agent pushes {extra_rows[1]['px_median']:.1f} px" if extra_rows else ""
+            _log(step, steps, started, f"{parts}  val 1 push: {val}{note}{mark}")
 
     predictor, _ = load_module(Predictor, out / "predictor.pt", data.device)
-    rows = rollout_errors(data, predictor, translator, TEST)
-    result = {"test": rows, "history": history}
+    tests = {d.world: rollout_errors(d, predictor, translator, TEST) for d in datasets}
+    result = {"test": tests, "history": history}
     if extra is not None:
         result["extra_test"] = rollout_errors(extra, predictor, translator, TEST)
     (out / "wm_eval.json").write_text(json.dumps(result, indent=1))
-    print("\nTest set, imagined state vs true state:\n" + format_rows(rows))
+    for world, rows in tests.items():
+        print(f"\n{world}, test set, imagined state vs true state:\n" + format_rows(rows))
     if extra is not None:
         print("\nExtra data (test):\n" + format_rows(result["extra_test"]))
-    return rows
+    return tests
 
 
 def transfer_test(

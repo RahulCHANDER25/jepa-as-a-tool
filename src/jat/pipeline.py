@@ -1,16 +1,15 @@
-"""The overnight run: data, V-JEPA 2 latents, translators (specialists, the shared one, the
-transfer test), predictors, learning from use, and every evaluation, as stages.
+"""The main run: data of three worlds, V-JEPA 2 latents, one world model (one translator, one
+predictor) trained on the three at once, and the agent's evaluations on them plus a fourth world
+it never saw. notebooks/train_and_evaluate.ipynb runs it, one stage per cell.
 
-Each step skips itself when its output exists, so running a stage again continues where the
-last attempt stopped. Long steps run as `jat` subprocesses with their own log in <work>/logs;
-GPU steps spread over the GPUs; evaluations run in the background as soon as what they need
-exists (episodes without the world model start right away).
+Each stage skips what is already done, so running it again continues where the last attempt
+stopped. Long steps run as `jat` subprocesses with their own log in <work>/logs; GPU steps are
+pinned to a GPU; evaluations run in the background, those without the world model from the start.
 
-notebooks/train_four_worlds.ipynb runs one stage per cell. `jat pipeline --size small --provider dry`
-runs everything at toy sizes with a scripted agent: a dry run with no API and no GPU.
+`jat pipeline --size small --provider dry` runs everything at toy sizes with a scripted agent: a
+dry run with no API and no GPU.
 """
 
-import json
 import os
 import shutil
 import subprocess
@@ -20,65 +19,48 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-NEW_WORLDS = ("tabletop", "billiards")
-NEW_LOOK = "tabletop-new-look"
-FAMILIES = {
-    "tabletop": "translate,rotate,pose",
+WORLDS = ("pusht", "tabletop", "billiards")  # the world model learns these, together
+NEW_LOOK = "tabletop-new-look"  # evaluation only: the tabletop in another room, never trained on
+FAMILIES = {  # the hardest task families of each world (tabletop translate: 94% alone)
+    "pusht": "rotate,pose",
+    "tabletop": "rotate,pose",
     "billiards": "shot,bank,carom",
     NEW_LOOK: "rotate,pose",
-    "pusht-ft": "pose",
 }
-FT_TASK_SEED = 1  # the fine-tune learned from the task seed 0 logs: evaluate on other tasks
-GATE3_SLACK = 1.25  # the shared translator passes within 25% of each specialist
 
 
 @dataclass(frozen=True)
 class Sizes:
-    episodes: int  # per new world
+    episodes: int  # per 3D world
+    pusht_episodes: int
+    new_look_episodes: int  # offline check of the world model only
     steps: int  # pushes per episode
-    new_look_episodes: int  # offline zero-shot check only
-    pusht_episodes: int  # only if the PushT v2 data is not attached
     translator_steps: int
-    shared_steps: int
-    transfer_budgets: str
-    transfer_steps: int
-    predictor_steps: int
+    predictor_steps: int  # one world per step, in turn
     rollout: int
-    finetune_steps: int
     tasks: int  # per family
-    learn_limit: int | None
 
 
 SIZES = {
     "full": Sizes(
         episodes=5000,
-        steps=8,
-        new_look_episodes=500,
         pusht_episodes=6000,
-        translator_steps=6000,
-        shared_steps=8000,
-        transfer_budgets="250,1000,4000",
-        transfer_steps=3000,
-        predictor_steps=25000,
+        new_look_episodes=500,
+        steps=8,
+        translator_steps=8000,
+        predictor_steps=60000,
         rollout=4,
-        finetune_steps=8000,
-        tasks=50,
-        learn_limit=None,
+        tasks=100,
     ),
     "small": Sizes(
         episodes=12,
-        steps=3,
-        new_look_episodes=8,
         pusht_episodes=12,
+        new_look_episodes=8,
+        steps=3,
         translator_steps=20,
-        shared_steps=20,
-        transfer_budgets="4,8",
-        transfer_steps=10,
         predictor_steps=10,
         rollout=2,
-        finetune_steps=10,
         tasks=1,
-        learn_limit=40,
     ),
 }
 
@@ -153,22 +135,16 @@ class Pipeline:
         self,
         work: Path,
         size: str = "full",
-        wm_v2: Path | None = None,
-        eval_v2: Path | None = None,
-        pusht_data: Path | None = None,
         gpus: int = 0,
         provider: str = "meta",
-        eval_workers: int = 6,
+        eval_workers: int = 8,
     ):
-        self.work = work.resolve()
+        self.work = work.resolve()  # absolute: the jat subprocesses run inside `work`
         self.sizes = SIZES[size]
-        # Absolute: the jat subprocesses run inside `work`
-        self.wm_v2, self.eval_v2, self.pusht_data = (
-            p.resolve() if p is not None else None for p in (wm_v2, eval_v2, pusht_data)
-        )
         self.gpus, self.provider, self.eval_workers = gpus, provider, eval_workers
         self.data, self.runs, self.results = (self.work / d for d in ("data", "runs", "results"))
         self.logs = self.work / "logs"
+        self.wm = self.runs / "wm"
         for folder in (self.data, self.runs, self.results, self.logs):
             folder.mkdir(parents=True, exist_ok=True)
         self.background: dict[str, subprocess.Popen] = {}
@@ -231,49 +207,35 @@ class Pipeline:
 
     # Stages
 
+    def stage_baseline_evals(self) -> None:
+        """The agent alone and with the real physics in every world, in the background: they
+        need no world model, so they run while it trains."""
+        for world in (*WORLDS, NEW_LOOK):
+            self._eval(f"eval-{world}-base", world, "no_tool,oracle_tool")
+
     def stage_data(self) -> None:
-        """Random-push episodes of the new worlds (CPU), PushT's (attached or generated), and
-        the agent's own imagined pushes from the PushT evaluation logs."""
+        """Random-push episodes of every world (CPU). Not needed again once the world model is
+        trained and checked: a resumed run's output has runs, not datasets."""
+        if self._checked():
+            return
         s = self.sizes
-        jobs = [
-            self._gen_job(world, episodes)
-            for world, episodes in (
-                *((w, s.episodes) for w in NEW_WORLDS),
-                (NEW_LOOK, s.new_look_episodes),
-            )
-            if not (self.data / world / "rollouts.npz").exists()
-        ]
-        pusht = self.data / "pusht"
-        if not pusht.exists():
-            if self.pusht_data is not None:
-                pusht.symlink_to(self.pusht_data.resolve(), target_is_directory=True)
-                print(f"PushT data: {self.pusht_data}")
-            else:
-                args = ["gen", str(pusht), "--episodes", str(s.pusht_episodes)]
-                jobs.append(("gen-pusht", [*args, "--steps", str(s.steps)]))
-        self._run(jobs + self._learn_data_jobs())
+        episodes = {
+            "pusht": s.pusht_episodes,
+            "tabletop": s.episodes,
+            "billiards": s.episodes,
+            NEW_LOOK: s.new_look_episodes,
+        }
+        self._run(
+            [
+                self._gen_job(world, n)
+                for world, n in episodes.items()
+                if not (self.data / world / "rollouts.npz").exists()
+            ]
+        )
 
     def _gen_job(self, world: str, episodes: int) -> tuple[str, list[str]]:
         args = ["gen", str(self.data / world), "--world", world, "--episodes", str(episodes)]
         return f"gen-{world}", [*args, "--steps", str(self.sizes.steps)]
-
-    def _learn_data_jobs(self) -> list[tuple[str, list[str]]]:
-        agent = self.data / "pusht-agent"
-        checked = (self.runs / "pusht-ft" / "wm_eval_agent_ft.json").exists()
-        if self.eval_v2 is None or (agent / "rollouts.npz").exists() or checked:
-            return []
-        args = ["learn-data", str(agent), "--run", str(self.eval_v2)]
-        limit = self.sizes.learn_limit
-        return [("learn-data", args + (["--limit", str(limit)] if limit else []))]
-
-    def stage_baseline_evals(self) -> None:
-        """Episodes that need no new world model, in the background: alone and with the real
-        physics in every new world; PushT pose tasks on a new task seed, alone and with v2."""
-        for world in (*NEW_WORLDS, NEW_LOOK):
-            self._eval(f"eval-{world}-base", world, "no_tool,oracle_tool")
-        if self.wm_v2 is not None:
-            extra = ["--task-seed", str(FT_TASK_SEED), "--wm", str(self.wm_v2)]
-            self._eval("eval-pusht-ft-base", "pusht", "no_tool,wm_tool", extra, "pusht-ft")
 
     def stage_encode(self) -> None:
         """V-JEPA 2 latents of every dataset, spread over the GPUs."""
@@ -284,231 +246,46 @@ class Pipeline:
         ]
         self._run(jobs, gpu_jobs=True)
 
-    def stage_translators(self) -> dict:
-        """Specialists, the shared translator (3 worlds), a trunk on 2 worlds and the transfer
-        test on billiards; Gate 3 picks the translator each new world's agent reads with."""
-        self._train_translators()
-        return self._gate3()
+    def _datasets(self) -> list[str]:
+        return [str(self.data / w) for w in WORLDS]
 
-    def _train_translators(self) -> None:
-        s, d, r = self.sizes, self.data, self.runs
-        steps = ["--steps", str(s.translator_steps)]
-        specialists = [
-            (
-                f"translator-{w}",
-                ["train", "translator", str(d / w), "--out", str(r / f"{w}-spec"), *steps],
-            )
-            for w in NEW_WORLDS
-            if not (r / f"{w}-spec" / "translator.pt").exists()
-        ]
-        self._run(specialists, gpu_jobs=True)
-        shared_steps = ["--steps", str(s.shared_steps)]
-        jobs = []
-        if not (r / "shared" / "translator.pt").exists():
-            data = [str(d / "pusht"), *(str(d / w) for w in NEW_WORLDS)]
-            jobs.append(
-                (
-                    "translator-shared",
-                    ["train", "translator", *data, "--out", str(r / "shared"), *shared_steps],
-                )
-            )
-        if not (r / "trunk2" / "translator.pt").exists():
-            data = [str(d / "pusht"), str(d / "tabletop")]
-            jobs.append(
-                (
-                    "translator-trunk2",
-                    ["train", "translator", *data, "--out", str(r / "trunk2"), *shared_steps],
-                )
-            )
-        self._run(jobs)  # one at a time: each may hold PushT's latents in RAM
-        if not (r / "transfer" / "transfer.json").exists():
-            args = [
-                "transfer", str(d / "billiards"), "--trunk-from", str(r / "trunk2" / "translator.pt"),
-                "--out", str(r / "transfer"), "--budgets", s.transfer_budgets,
-                "--steps", str(s.transfer_steps),
-            ]  # fmt: skip
-            self._run([("transfer", args)])
-
-    def _gate3(self) -> dict:
-        import torch
-
-        from jat.wm.data import TEST
-        from jat.wm.dataset import LatentData
-        from jat.wm.evaluate import translator_errors
-        from jat.wm.models import Translator, load_module
-
-        r = self.runs
-        shared = json.loads((r / "shared" / "translator_eval.json").read_text())
-        table, gates = {}, {}
-        for world in NEW_WORLDS:
-            spec = json.loads((r / f"{world}-spec" / "translator_eval.json").read_text())[world][
-                "test"
-            ]
-            both = shared[world]["test"]
-            ok = all(both[k] <= GATE3_SLACK * spec[k] + 0.5 for k in ("px_median", "deg_median"))
-            gates[world] = "shared" if ok else "specialist"
-            table[world] = {"specialist": spec, "shared": both}
-            chosen = r / ("shared" if ok else f"{world}-spec") / "translator.pt"
-            (r / world).mkdir(exist_ok=True)
-            shutil.copy(chosen, r / world / "translator.pt")
-        table["pusht"] = {"shared": shared["pusht"]["test"]}
-        # Zero-shot: the new look read by the tabletop head, never trained on it
-        look = LatentData(self.data / NEW_LOOK, torch.device("cpu"))
-        for name in ("tabletop-spec", "shared"):
-            translator, _ = load_module(Translator, r / name / "translator.pt")
-            table.setdefault(NEW_LOOK, {})[name] = translator_errors(
-                look, translator, TEST, "tabletop"
-            )
-        transfer = json.loads((r / "transfer" / "transfer.json").read_text())
-        summary = {"gate3": gates, "translators": table, "transfer": transfer}
-        (self.results / "translators.json").write_text(json.dumps(summary, indent=1))
-        print(json.dumps({"gate3": gates}, indent=1))
-        for world, rows in table.items():
-            for name, e in rows.items():
-                print(f"{world:>18} {name:>14}: {e['px_median']:.1f} px, {e['deg_median']:.1f}°")
-        return summary
-
-    def stage_predictors(self) -> None:
-        """Predictors of the new worlds, one per GPU, then PushT fine-tuned on the agent's own
-        pushes. Each world's evaluation with its world model starts as soon as it is trained."""
-        s, d, r = self.sizes, self.data, self.runs
-        common = ["--steps", str(s.predictor_steps), "--rollout", str(s.rollout)]
-        jobs = {
-            w: ["train", "predictor", str(d / w), "--out", str(r / w), *common]
-            for w in NEW_WORLDS
-            if not (r / w / "wm_eval.json").exists()
-        }
-        ft = r / "pusht-ft"
-        if (
-            self.wm_v2 is not None
-            and (d / "pusht-agent").exists()
-            and not (ft / "wm_eval.json").exists()
-        ):
-            ft.mkdir(exist_ok=True)
-            shutil.copy(self.wm_v2 / "translator.pt", ft / "translator.pt")
-            jobs["pusht-ft"] = [
-                "train", "predictor", str(d / "pusht"), "--out", str(ft),
-                "--init", str(self.wm_v2 / "predictor.pt"), "--extra", str(d / "pusht-agent"),
-                "--steps", str(s.finetune_steps), "--rollout", str(min(s.rollout + 1, s.steps)),
-                "--lr", "1e-4",
-            ]  # fmt: skip
-        lanes = max(1, self.gpus)
-        free = list(range(self.gpus)) if self.gpus else [None]
-        running: dict[str, tuple[subprocess.Popen, int | None]] = {}
-        queue = list(jobs)
-        self._evals_with_models()
-        while queue or running:
-            while queue and len(running) < lanes:
-                name = queue.pop(0)
-                gpu = free.pop(0)
-                running[name] = (self._start(f"predictor-{name}", jobs[name], gpu), gpu)
-            time.sleep(5)
-            for name, (process, gpu) in list(running.items()):
-                if process.poll() is None:
-                    continue
-                del running[name]
-                free.append(gpu)
-                self._wait({f"predictor-{name}": process})
-                self._evals_with_models()
-        for world in NEW_WORLDS:
-            if not (r / world / f"wm_eval_{world}.json").exists():
-                self._run(
-                    [(f"wm-eval-{world}", ["wm-eval", str(d / world), "--wm", str(r / world)])]
-                )
-        look = r / "tabletop" / f"wm_eval_{NEW_LOOK}.json"
-        if not look.exists():
-            args = ["wm-eval", str(d / NEW_LOOK), "--wm", str(r / "tabletop"), "--head", "tabletop"]
-            self._run([(f"wm-eval-{NEW_LOOK}", args)])
-
-    def _evals_with_models(self) -> None:
-        r = self.runs
-        for world in NEW_WORLDS:
-            if (r / world / "wm_eval.json").exists():
-                self._eval(f"eval-{world}-wm", world, "wm_tool", ["--wm", str(r / world)])
-        if (r / "tabletop" / "wm_eval.json").exists():
-            self._eval(f"eval-{NEW_LOOK}-wm", NEW_LOOK, "wm_tool", ["--wm", str(r / "tabletop")])
-        if (r / "pusht-ft" / "wm_eval.json").exists():
-            extra = ["--task-seed", str(FT_TASK_SEED), "--wm", f"ft={r / 'pusht-ft'}"]
-            self._eval("eval-pusht-ft-wm", "pusht", "wm_tool@ft", extra, "pusht-ft")
-
-    # On a finished run (notebooks/rebuild_billiards.ipynb): billiards again on the fixed
-    # physics, and the world-model evaluations a rendering bug had stopped. The tabletop and PushT
-    # models are kept as they are, so their datasets are not rebuilt.
-
-    def reset_billiards(self) -> None:
-        """Delete what the old billiards physics made: balls could fly off the table. Once only:
-        the marker keeps a resumed run from deleting its own new billiards."""
-        marker = self.runs / "billiards-physics-2"
-        if marker.exists():
+    def stage_translator(self) -> None:
+        """One translator for the three worlds: a shared trunk, one head per world."""
+        if (self.wm / "translator.pt").exists():
             return
-        r = self.runs
-        for path in (
-            self.data / "billiards", r / "billiards", r / "billiards-spec", r / "transfer",
-            self.results / "billiards",
-        ):  # fmt: skip
-            if path.is_symlink():
-                path.unlink()
-            else:
-                shutil.rmtree(path, ignore_errors=True)
-        marker.touch()
-        print("old billiards outputs deleted: rebuilt on the fixed physics")
+        steps = ["--steps", str(self.sizes.translator_steps)]
+        args = ["train", "translator", *self._datasets(), "--out", str(self.wm), *steps]
+        self._run([("translator", args)], gpu_jobs=True)
 
-    def stage_billiards_data(self) -> None:
-        """Evaluations that need no new model start in the background (billiards alone and with
-        the real physics; tabletop and the new look with the tabletop model), then the billiards
-        data and the agent's own PushT pushes."""
-        self._eval("eval-billiards-base", "billiards", "no_tool,oracle_tool")
-        self._evals_with_models()
-        built = (self.runs / "billiards" / "wm_eval.json").exists() and (
-            self.runs / "transfer" / "transfer.json"
-        ).exists()  # a resumed run: its models are kept, its data was not packed
-        jobs = [] if built or (self.data / "billiards" / "rollouts.npz").exists() else [
-            self._gen_job("billiards", self.sizes.episodes)
+    def stage_predictor(self) -> None:
+        """One predictor for the three worlds, read through that translator."""
+        if (self.wm / "wm_eval.json").exists():
+            return
+        s = self.sizes
+        args = [
+            "train", "predictor", *self._datasets(), "--out", str(self.wm),
+            "--steps", str(s.predictor_steps), "--rollout", str(s.rollout),
         ]  # fmt: skip
-        self._run(jobs + self._learn_data_jobs())
+        self._run([("predictor", args)], gpu_jobs=True)
 
-    def stage_billiards_translator(self) -> dict:
-        """Billiards' own translator and the transfer test. The shared translator is not trained
-        again (it needs every world's latents): billiards reads with its specialist."""
-        self._train_translators()
-        r = self.runs
-        (r / "billiards").mkdir(exist_ok=True)
-        shutil.copy(r / "billiards-spec" / "translator.pt", r / "billiards" / "translator.pt")
-        path = self.results / "translators.json"
-        summary = json.loads(path.read_text()) if path.exists() else {"translators": {}}
-        spec = json.loads((r / "billiards-spec" / "translator_eval.json").read_text())
-        summary.setdefault("gate3", {})["billiards"] = "specialist (shared not retrained)"
-        summary["translators"]["billiards"] = {"specialist": spec["billiards"]["test"]}
-        summary["transfer"] = json.loads((r / "transfer" / "transfer.json").read_text())
-        path.write_text(json.dumps(summary, indent=1))
-        e = spec["billiards"]["test"]
-        print(f"billiards translator: {e['px_median']:.1f} px median, {e['px_p90']:.1f} px p90")
-        return summary
+    def stage_wm_evals(self) -> None:
+        """The agent with the world model in every world, in the background."""
+        for world in (*WORLDS, NEW_LOOK):
+            self._eval(f"eval-{world}-wm", world, "wm_tool", ["--wm", str(self.wm)])
 
-    def stage_learning_check(self) -> None:
-        """Learning from use, fairly: v2 and the fine-tuned predictor on the same held-out
-        pushes the agent chose."""
-        agent, ft = self.data / "pusht-agent", self.runs / "pusht-ft"
-        if self.wm_v2 is None or not (agent / "latents.json").exists():
+    def _checked(self) -> bool:
+        return (self.wm / f"wm_eval_{NEW_LOOK}.json").exists()
+
+    def stage_check_new_look(self) -> None:
+        """The world model against the real physics in the room it never saw (the trained
+        worlds' test errors come with the predictor, in wm_eval.json)."""
+        if self._checked():
             return
-        for tag, wm in (("v2", self.wm_v2), ("ft", ft)):
-            out = ft / f"wm_eval_agent_{tag}.json"
-            if not out.exists():
-                args = ["wm-eval", str(agent), "--wm", str(wm), "--out", str(out)]
-                self._run([(f"wm-eval-agent-{tag}", args)])
-
-    def run_rebuild_billiards(self) -> Path:
-        self.reset_billiards()
-        self.stage_billiards_data()
-        self.stage_encode()
-        self.stage_billiards_translator()
-        self.stage_predictors()
-        self.stage_learning_check()
-        return self.stage_finish()
+        args = ["wm-eval", str(self.data / NEW_LOOK), "--wm", str(self.wm), "--head", "tabletop"]
+        self._run([(f"wm-eval-{NEW_LOOK}", args)], gpu_jobs=True)
 
     def stage_finish(self) -> Path:
         """Wait for every evaluation, write the reports, pack runs + results + logs."""
-        self._evals_with_models()
         for name, process in list(self.background.items()):
             if process.wait() != 0:  # episodes on disk are skipped: this reruns the failed ones
                 print(f"[{time.strftime('%H:%M:%S')}] {name} had failures; one retry")
@@ -521,7 +298,7 @@ class Pipeline:
             if (folder / "episodes").is_dir():
                 self._run([(f"report-{folder.name}", ["report", str(folder)])])
                 shutil.copy(self.logs / f"report-{folder.name}.log", folder / "report.txt")
-        archive = self.work / "overnight.zip"
+        archive = self.work / "results.zip"
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
             for top in (self.runs, self.results, self.logs):
                 for path in sorted(top.rglob("*")):
@@ -531,9 +308,11 @@ class Pipeline:
         return archive
 
     def run_all(self) -> Path:
-        self.stage_data()
         self.stage_baseline_evals()
+        self.stage_data()
         self.stage_encode()
-        self.stage_translators()
-        self.stage_predictors()
+        self.stage_translator()
+        self.stage_predictor()
+        self.stage_wm_evals()
+        self.stage_check_new_look()
         return self.stage_finish()
