@@ -259,7 +259,8 @@ class Pipeline:
 
     def _learn_data_jobs(self) -> list[tuple[str, list[str]]]:
         agent = self.data / "pusht-agent"
-        if self.eval_v2 is None or (agent / "rollouts.npz").exists():
+        checked = (self.runs / "pusht-ft" / "wm_eval_agent_ft.json").exists()
+        if self.eval_v2 is None or (agent / "rollouts.npz").exists() or checked:
             return []
         args = ["learn-data", str(agent), "--run", str(self.eval_v2)]
         limit = self.sizes.learn_limit
@@ -458,7 +459,10 @@ class Pipeline:
         data and the agent's own PushT pushes."""
         self._eval("eval-billiards-base", "billiards", "no_tool,oracle_tool")
         self._evals_with_models()
-        jobs = [] if (self.data / "billiards" / "rollouts.npz").exists() else [
+        built = (self.runs / "billiards" / "wm_eval.json").exists() and (
+            self.runs / "transfer" / "transfer.json"
+        ).exists()  # a resumed run: its models are kept, its data was not packed
+        jobs = [] if built or (self.data / "billiards" / "rollouts.npz").exists() else [
             self._gen_job("billiards", self.sizes.episodes)
         ]  # fmt: skip
         self._run(jobs + self._learn_data_jobs())

@@ -21,3 +21,20 @@ def test_the_old_billiards_is_deleted_once_only(tmp_path):
     (p.runs / "billiards").mkdir()  # the rebuilt billiards
     p.reset_billiards()
     assert (p.runs / "billiards").exists()
+
+
+def test_a_resumed_rebuild_only_reruns_the_evaluations(tmp_path, monkeypatch):
+    from jat.pipeline import Pipeline
+
+    p = Pipeline(tmp_path, eval_v2=tmp_path)
+    for path in ("billiards/wm_eval.json", "transfer/transfer.json", "pusht-ft/wm_eval.json",
+                 "pusht-ft/wm_eval_agent_ft.json", "billiards-physics-2"):  # fmt: skip
+        (p.runs / path).parent.mkdir(parents=True, exist_ok=True)
+        (p.runs / path).touch()
+    evals, jobs = [], []
+    monkeypatch.setattr(p, "_eval", lambda name, *args, **kw: evals.append(name))
+    monkeypatch.setattr(p, "_run", lambda batch, **kw: jobs.extend(batch))
+    p.reset_billiards()
+    p.stage_billiards_data()
+    assert (p.runs / "billiards").exists() and not jobs  # no new data: the models are kept
+    assert {"eval-billiards-base", "eval-billiards-wm", "eval-pusht-ft-wm"} <= set(evals)

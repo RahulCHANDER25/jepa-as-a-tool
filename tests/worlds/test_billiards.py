@@ -67,6 +67,13 @@ def test_tasks_are_solvable(family):
     assert "red ball" in BILLIARDS.state_text(task.start, task.goal)
 
 
+def test_carom_tasks_are_found():
+    # a strike carries the white ball ~80 px: from a random start it rarely moves the red one
+    for index in range(20):
+        task = BILLIARDS.sample_task("carom", 0, index)
+        assert np.linalg.norm(np.subtract(task.goal[2:], task.start[2:])) >= 40
+
+
 def test_both_balls_are_visible(can_render):
     frame = BILLIARDS.render(APART)
     empty = BILLIARDS.render([-2000.0, -2000.0, -2000.0, -1000.0])

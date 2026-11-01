@@ -78,13 +78,17 @@ class Family:
     min_travel: float  # px the red ball moves in the reference strike
     ball: str  # the ball the reference strike hits
     cushion: bool  # the red ball must touch a cushion during the reference strike
+    # The red ball starts this close to the white one (gap, px) and the reference strike aims the
+    # white at it: a strike carries the white about 80 px, so from anywhere it rarely reaches red.
+    close: float | None = None
 
 
 FAMILIES = {
     "shot": Family(max_pushes=2, min_travel=100, ball="red", cushion=False),
     "bank": Family(max_pushes=2, min_travel=80, ball="red", cushion=True),
-    "carom": Family(max_pushes=2, min_travel=60, ball="white", cushion=False),
+    "carom": Family(max_pushes=2, min_travel=40, ball="white", cushion=False, close=60),
 }
+AIM_SPREAD = 0.12  # rad, around the line from one ball to the other
 
 
 def _ball(name: str, rgba: str) -> str:
@@ -241,12 +245,35 @@ class Billiards:
             if np.linalg.norm(balls[0] - balls[1]) >= 2 * RADIUS + MIN_GAP:
                 return balls.reshape(-1)
 
-    def aimed_push(self, state, rng: np.random.Generator, ball: str | None = None) -> Push:
-        """A stroke aimed at one ball (random unless given), a little off its center."""
+    def close_start(self, rng: np.random.Generator, gap: float) -> np.ndarray:
+        """The red ball within `gap` of the white one (on top of MIN_GAP), with room behind the
+        white for a cue aimed at the red."""
+        low, high = START_WALL_MARGIN, TABLE - START_WALL_MARGIN
+        while True:
+            white = rng.uniform(low, high, size=2)
+            angle = rng.uniform(0, 2 * math.pi)
+            direction = np.array([math.cos(angle), math.sin(angle)])
+            red = white + (2 * RADIUS + MIN_GAP + rng.uniform(0, gap)) * direction
+            cue = white - (RADIUS + PUSHER_RADIUS + 30) * direction
+            if ((red >= low) & (red <= high)).all() and (
+                (cue >= MARGIN) & (cue <= TABLE - MARGIN)
+            ).all():
+                return np.concatenate([white, red])
+
+    def aimed_push(
+        self, state, rng: np.random.Generator, ball: str | None = None, at_other: bool = False
+    ) -> Push:
+        """A stroke aimed at one ball (random unless given), a little off its center; with
+        `at_other`, sending it roughly toward the other ball."""
         balls = self._balls(state)
         for _ in range(200):
-            target = balls[NAMES.index(ball or NAMES[rng.integers(len(NAMES))])]
-            angle = rng.uniform(0, 2 * math.pi)
+            k = NAMES.index(ball or NAMES[rng.integers(len(NAMES))])
+            target = balls[k]
+            if at_other:
+                line = balls[1 - k] - target
+                angle = math.atan2(line[1], line[0]) + rng.normal(0, AIM_SPREAD)
+            else:
+                angle = rng.uniform(0, 2 * math.pi)
             direction = np.array([math.cos(angle), math.sin(angle)])
             side = np.array([-direction[1], direction[0]])
             offset = rng.uniform(-0.5, 0.5) * RADIUS  # a cut: hits off the center line
@@ -288,8 +315,11 @@ class Billiards:
         spec = self.families[family]
         rng = np.random.default_rng([seed, index])
         for _ in range(MAX_TRIES):
-            start = self.random_start(rng)
-            push = self.aimed_push(start, rng, ball=spec.ball)
+            if spec.close is None:
+                start = self.random_start(rng)
+            else:
+                start = self.close_start(rng, spec.close)
+            push = self.aimed_push(start, rng, ball=spec.ball, at_other=spec.close is not None)
             run = self._run(start, push)
             goal = np.array(run.result.state)
             red = self._balls(goal)[1]
