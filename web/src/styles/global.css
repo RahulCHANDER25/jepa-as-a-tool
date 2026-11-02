@@ -528,6 +528,8 @@ figcaption.numbered > p {
   border: 1px solid var(--border);
 }
 .tag {
+  display: inline-block; /* the pill moves to the next line whole, never split */
+  white-space: nowrap;
   font-size: 0.7rem;
   font-weight: 600;
   text-transform: uppercase;

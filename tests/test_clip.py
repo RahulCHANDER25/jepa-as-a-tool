@@ -39,3 +39,12 @@ def test_the_caption_sits_above_the_table_and_never_covers_it(can_render):
     assert words.shape == silent.shape == (128 + CAPTION_HEIGHT, 128, 3)
     assert np.array_equal(words[CAPTION_HEIGHT:], silent[CAPTION_HEIGHT:])
     assert not np.array_equal(words[:CAPTION_HEIGHT], silent[:CAPTION_HEIGHT])
+
+
+def test_a_2d_episode_becomes_a_video_too(tmp_path):
+    world = get_world("pusht")
+    task = world.sample_task("rotate", 0, 0)
+    agent = AgentInfo(provider="dry", model="dry", prompt_version="test", temperature=0.0)
+    log = run_episode(task, "oracle_tool", OracleBackend(world), chat_model("dry", 0), agent, "x")
+    out = render_clip(log, tmp_path / "clip.mp4", size=128)
+    assert out.exists() and out.stat().st_size > 1000

@@ -1,4 +1,4 @@
-"""A logged episode of a 3D world as a video: what the agent thinks, the plans it imagines
+"""A logged episode as a video (MuJoCo in 3D, drawn from above in 2D): what the agent thinks, the plans it imagines
 (see-through ghosts), the one it picks (green), then the real push.
 
     jat clip results/tabletop/episodes/rotate-0-003__wm_tool__s0.json --out clip.mp4
@@ -16,6 +16,7 @@ import numpy as np
 
 from jat.agent.episode_log import EpisodeLog, FrameLog
 from jat.worlds import get_world
+from jat.worlds.base import TABLE
 from jat.worlds.table3d import scene as s3d
 
 SLOTS = 10  # ghost slots: 1 for the goal, the rest for imagined plans
@@ -49,7 +50,28 @@ def chosen_plan(log: EpisodeLog, real: str, push) -> tuple[str | None, list[Fram
     return (best.id if best is not None and gap(best) < 20 else None), candidates
 
 
-class Film:
+class Reel:
+    """Frames of a clip and the words shown above them."""
+
+    def __init__(self):
+        self.frames: list[np.ndarray] = []
+        self.text = ""
+
+    def _caption(self, frame: np.ndarray) -> np.ndarray:
+        """The agent's words in a band above the picture, so they never hide the table."""
+        band = np.full((CAPTION_HEIGHT, frame.shape[1], 3), 245, np.uint8)
+        # OpenCV's Hershey font is ASCII only: curly quotes would print as "???"
+        text = self.text.translate(ASCII).encode("ascii", "ignore").decode()
+        lines = textwrap.wrap(text, width=frame.shape[1] // 10 - 3)  # room for " ..."
+        if len(lines) > CAPTION_LINES:
+            lines = [*lines[: CAPTION_LINES - 1], lines[CAPTION_LINES - 1] + " ..."]
+        for i, line in enumerate(lines):
+            cv2.putText(band, line, (12, 28 + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                        (30, 30, 30), 1, cv2.LINE_AA)  # fmt: skip
+        return np.vstack([band, frame])
+
+
+class Film(Reel):
     def __init__(self, world, size: int):
         import mujoco
 
@@ -61,8 +83,7 @@ class Film:
         self.data = mujoco.MjData(self.model)
         self.renderer = mujoco.Renderer(self.model, size, size)
         self.n_objects = len(world.poses(world.random_start(np.random.default_rng(0))))
-        self.frames: list[np.ndarray] = []
-        self.text = ""
+        super().__init__()
 
     def _ghost_body(self, slot: int, k: int) -> int:
         name = f"ghost{slot}_{k}"
@@ -102,18 +123,51 @@ class Film:
         frame = self._caption(self.renderer.render().copy())
         self.frames += [frame] * max(1, round(seconds * FPS))
 
-    def _caption(self, frame: np.ndarray) -> np.ndarray:
-        """The agent's words in a band above the picture, so they never hide the table."""
-        band = np.full((CAPTION_HEIGHT, frame.shape[1], 3), 245, np.uint8)
-        # OpenCV's Hershey font is ASCII only: curly quotes would print as "???"
-        text = self.text.translate(ASCII).encode("ascii", "ignore").decode()
-        lines = textwrap.wrap(text, width=frame.shape[1] // 10 - 3)  # room for " ..."
-        if len(lines) > CAPTION_LINES:
-            lines = [*lines[: CAPTION_LINES - 1], lines[CAPTION_LINES - 1] + " ..."]
-        for i, line in enumerate(lines):
-            cv2.putText(band, line, (12, 28 + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                        (30, 30, 30), 1, cv2.LINE_AA)  # fmt: skip
-        return np.vstack([band, frame])
+
+class Flat(Reel):
+    """A 2D world from above, drawn like the site's player: the real objects filled, the goal,
+    the imagined plans and the chosen one see-through on top."""
+
+    BACKGROUND, GRID, EDGE = (250, 250, 248), (232, 232, 228), (120, 120, 120)
+
+    def __init__(self, world, size: int):
+        super().__init__()
+        self.world, self.size = world, size
+
+    def _points(self, outline: np.ndarray) -> np.ndarray:
+        return np.round(outline * self.size / TABLE * 16).astype(np.int32)  # 4 subpixel bits
+
+    def _fill(self, image, state, rgba, goal: bool = False, edge: bool = True) -> np.ndarray:
+        layer = image.copy()
+        color = tuple(int(255 * c) for c in rgba[:3])
+        for _, outline in self.world.outlines(state, goal=goal):
+            cv2.fillPoly(layer, [self._points(outline)], color, cv2.LINE_AA, shift=4)
+            if edge:
+                cv2.polylines(layer, [self._points(outline)], True, color, 2, cv2.LINE_AA, shift=4)
+        alpha = min(1.0, rgba[3] * 1.6)  # flat colors need more weight than lit 3D ones
+        return (image * (1 - alpha) + layer * alpha).astype(np.uint8)
+
+    def shot(self, state, ghosts=(), goal=None, pusher=None, seconds: float = 0.0) -> None:
+        n = self.size
+        image = np.full((n, n, 3), self.BACKGROUND, np.uint8)
+        for k in range(1, 8):
+            cv2.line(image, (k * n // 8, 0), (k * n // 8, n), self.GRID, 1)
+            cv2.line(image, (0, k * n // 8), (n, k * n // 8), self.GRID, 1)
+        if goal is not None:
+            image = self._fill(image, goal, GOAL, goal=True)
+        for color, outline in self.world.outlines(state):
+            cv2.fillPoly(image, [self._points(outline)], color, cv2.LINE_AA, shift=4)
+            cv2.polylines(
+                image, [self._points(outline)], True, (50, 50, 50), 1, cv2.LINE_AA, shift=4
+            )
+        for ghost, rgba in ghosts[: SLOTS - 1]:
+            image = self._fill(image, ghost, rgba)
+        if pusher is not None:
+            center = tuple(int(round(c * n / TABLE)) for c in pusher)
+            cv2.circle(image, center, max(4, n // 40), (255, 255, 255), -1, cv2.LINE_AA)
+            cv2.circle(image, center, max(4, n // 40), self.EDGE, 2, cv2.LINE_AA)
+        cv2.rectangle(image, (0, 0), (n - 1, n - 1), self.EDGE, 2)
+        self.frames += [self._caption(image)] * max(1, round(seconds * FPS))
 
 
 def _last_thought_before_each_push(log: EpisodeLog) -> dict[str, str]:
@@ -131,9 +185,7 @@ def _last_thought_before_each_push(log: EpisodeLog) -> dict[str, str]:
 
 def render_clip(log: EpisodeLog, out: Path, size: int = 512) -> Path:
     world = get_world(log.task.world)
-    if not hasattr(world, "clip_scene"):
-        raise ValueError(f"{world.name} is not a 3D world: clips need MuJoCo")
-    film = Film(world, size)
+    film = Film(world, size) if hasattr(world, "clip_scene") else Flat(world, size)
     frames = {f.id: f for f in log.frames}
     goal = log.task.goal
     thoughts = [t.content.strip() for t in log.turns if t.content.strip()]
