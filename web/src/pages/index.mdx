@@ -14,7 +14,7 @@ links:
 
   Every number comes from web/public/data (written by `jat export-web`): <Stat> prints one,
   the charts read the tables. Each figure takes a run name (pusht, tabletop, billiards,
-  tabletop-new-look, and later the open-model run) and an episode id from
+  tabletop-new-look) and an episode id from
   web/public/data/episodes/<run>/index.json. A missing run or episode fails the build.
 
   After a new run: re-export, re-render the clips (`jat clip`), then re-read every sentence marked CHECK.
@@ -31,7 +31,6 @@ import Pipeline from "../components/Pipeline.astro";
 import Stat from "../components/Stat.astro";
 import DreamTable from "../components/DreamTable.astro";
 import Note from "../components/Note.astro";
-import OpenModel from "../components/OpenModel.astro";
 import Clip from "../components/Clip.astro";
 
 <p class="lede">
@@ -66,7 +65,7 @@ acts. We give it a way to check: a world model, behind one tool call.
 
 Same task, same model. On the left the LLM acts on its own; on the right it can imagine first.
 
-<Compare run="pusht" task="rotate-0-011">
+<Compare run="pusht" task="rotate-0-044">
   A PushT task where the goal needs a turn. Alone, the agent guesses; with the world model, it
   tries pushes in its imagination first.
 </Compare>
@@ -100,13 +99,14 @@ another room.
 
 <WorldCards
   episodes={[
-    { run: "pusht", id: "rotate-0-020__wm_tool__s0" },
-    { run: "tabletop", id: "rotate-0-028__wm_tool__s0" },
-    { run: "billiards", id: "shot-0-043__wm_tool__s0" },
+    { run: "pusht", id: "pose-0-021__wm_tool__s0" },
+    { run: "tabletop", id: "rotate-0-048__wm_tool__s0" },
+    { run: "billiards", id: "shot-0-023__wm_tool__s0" },
     { run: "tabletop-new-look", id: "rotate-0-001__wm_tool__s0" },
   ]}
 >
-  The four worlds, one episode each: PushT from above, the 3D worlds as their camera sees them.
+  The four worlds, one episode each: PushT from above, the 3D worlds from a little further back
+  than the camera the world model sees, so the whole table fits.
   All four share one 512 × 512 px table and the same push action.
 </WorldCards>
 
@@ -118,9 +118,9 @@ the plan it keeps; each _Push_ is a real push on the table.
 <WorldTabs
   wide
   episodes={[
-    { run: "pusht", id: "pose-0-032__wm_tool__s0" },
-    { run: "tabletop", id: "rotate-0-003__wm_tool__s0" },
-    { run: "billiards", id: "bank-0-050__wm_tool__s0" },
+    { run: "pusht", id: "pose-0-021__wm_tool__s0" },
+    { run: "tabletop", id: "rotate-0-090__wm_tool__s0" },
+    { run: "billiards", id: "carom-0-049__wm_tool__s0" },
   ]}
 >
   One episode per world, with the agent's own words. Toggle "show the real outcome" to compare each
@@ -130,7 +130,7 @@ the plan it keeps; each _Push_ is a real push on the table.
 Every frame of one episode, as a tree. Real frames form the trunk; imagined frames branch off.
 Underlined frames are pushes the agent imagined and then ran for real.
 
-<ImaginationTree run="pusht" episode="rotate-0-012__wm_tool__s0">
+<ImaginationTree run="pusht" episode="rotate-0-030__wm_tool__s0">
   The imagination tree of a PushT episode. Click a frame to see it on the table.
 </ImaginationTree>
 
@@ -217,13 +217,9 @@ tool reads a scene it does not know.
   imagination.
 </HorizonChart>
 
-<Compare run="tabletop-new-look" task="rotate-0-001">
+<Compare run="tabletop-new-look" task="pose-0-056">
   A new-room task the agent solves alone and fails with the world model.
 </Compare>
-
-{/* CHECK when the open-model run arrives: its run name and family; the text is in OpenModel.astro. */}
-
-<OpenModel run="glimmer" against="pusht" family="rotate" />
 
 ## Lab notebook
 

@@ -1,7 +1,9 @@
+import numpy as np
+
 from jat.agent.episode_log import AgentInfo
 from jat.agent.llm import chat_model
 from jat.agent.loop import run_episode
-from jat.clip import _last_thought_before_each_push, render_clip
+from jat.clip import CAPTION_HEIGHT, Film, _last_thought_before_each_push, render_clip
 from jat.tool.backends import OracleBackend
 from jat.worlds import get_world
 
@@ -23,3 +25,17 @@ def test_each_push_is_captioned_with_the_last_words_before_it():
     said = _last_thought_before_each_push(log)
     real = [f.id for f in log.frames if f.kind == "real" and f.parent is not None]
     assert real and list(said) == real
+
+
+def test_the_caption_sits_above_the_table_and_never_covers_it(can_render):
+    world = get_world("tabletop")
+    state = world.sample_task("rotate", 0, 0).start
+    film = Film(world, 128)
+    film.text = "a long thought about where to push the T next " * 10
+    film.shot(state)
+    film.text = ""
+    film.shot(state)
+    words, silent = film.frames
+    assert words.shape == silent.shape == (128 + CAPTION_HEIGHT, 128, 3)
+    assert np.array_equal(words[CAPTION_HEIGHT:], silent[CAPTION_HEIGHT:])
+    assert not np.array_equal(words[:CAPTION_HEIGHT], silent[:CAPTION_HEIGHT])

@@ -492,7 +492,6 @@ figcaption.numbered > p {
 .clip video {
   display: block;
   width: 100%;
-  aspect-ratio: 1;
   border-radius: 10px;
   border: 1px solid var(--border);
 }
@@ -524,6 +523,7 @@ figcaption.numbered > p {
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
+  object-position: 50% 100%; /* the table; the agent's words above it are too small here */
   border-radius: 10px;
   border: 1px solid var(--border);
 }

@@ -23,6 +23,11 @@ GOAL = (0.95, 0.75, 0.15, 0.35)
 GHOST = (0.75, 0.6, 1.0, 0.3)
 CHOSEN = (0.1, 0.85, 0.35, 0.6)
 FPS = 30
+# The world's camera (45°) crops the table's edge in the new room; clips are for people, so they
+# see the whole table. The world model only ever sees the world's own camera.
+CLIP_FOVY = 54
+CAPTION_LINES = 3
+CAPTION_HEIGHT = 14 + 22 * CAPTION_LINES  # a band above the picture, the same in every frame
 ASCII = str.maketrans({"\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"', "\u2014": "-",
                        "\u2013": "-", "\u2192": "->", "\u00b0": " deg"})  # fmt: skip
 
@@ -47,6 +52,7 @@ class Film:
         self.mj, self.world = mujoco, world
         self.scene = world.clip_scene(SLOTS)
         self.model = self.scene.model
+        self.model.cam_fovy[:] = CLIP_FOVY
         self.data = mujoco.MjData(self.model)
         self.renderer = mujoco.Renderer(self.model, size, size)
         self.n_objects = len(world.poses(world.random_start(np.random.default_rng(0))))
@@ -90,18 +96,17 @@ class Film:
         self.frames += [frame] * max(1, round(seconds * FPS))
 
     def _caption(self, frame: np.ndarray) -> np.ndarray:
-        if not self.text:
-            return frame
+        """The agent's words in a band above the picture, so they never hide the table."""
+        band = np.full((CAPTION_HEIGHT, frame.shape[1], 3), 245, np.uint8)
         # OpenCV's Hershey font is ASCII only: curly quotes would print as "???"
         text = self.text.translate(ASCII).encode("ascii", "ignore").decode()
-        lines = textwrap.wrap(text, width=frame.shape[1] // 10)[:3]
-        height = 14 + 22 * len(lines)
-        band = frame[:height].astype(np.float32)
-        frame[:height] = (band * 0.35 + 255 * 0.65).astype(np.uint8)
+        lines = textwrap.wrap(text, width=frame.shape[1] // 10 - 3)  # room for " ..."
+        if len(lines) > CAPTION_LINES:
+            lines = [*lines[: CAPTION_LINES - 1], lines[CAPTION_LINES - 1] + " ..."]
         for i, line in enumerate(lines):
-            cv2.putText(frame, line, (12, 28 + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+            cv2.putText(band, line, (12, 28 + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
                         (30, 30, 30), 1, cv2.LINE_AA)  # fmt: skip
-        return frame
+        return np.vstack([band, frame])
 
 
 def _last_thought_before_each_push(log: EpisodeLog) -> dict[str, str]:
