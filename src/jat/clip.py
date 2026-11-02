@@ -27,6 +27,10 @@ FPS = 30
 # see the whole table. The world model only ever sees the world's own camera.
 CLIP_FOVY = 54
 CAPTION_LINES = 3
+SHADOW_SIZE = 8192  # MuJoCo's 2048 draws the rim's shadow as a saw-tooth
+# Ghosts lie where the real objects are: each slot sits a bit higher, so overlapping surfaces
+# stack in a fixed order instead of flickering through each other (z-fighting)
+GHOST_LIFT = 0.0006  # m per slot
 CAPTION_HEIGHT = 14 + 22 * CAPTION_LINES  # a band above the picture, the same in every frame
 ASCII = str.maketrans({"\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"', "\u2014": "-",
                        "\u2013": "-", "\u2192": "->", "\u00b0": " deg"})  # fmt: skip
@@ -53,6 +57,7 @@ class Film:
         self.scene = world.clip_scene(SLOTS)
         self.model = self.scene.model
         self.model.cam_fovy[:] = CLIP_FOVY
+        self.model.vis.quality.shadowsize = SHADOW_SIZE  # read when the renderer is made
         self.data = mujoco.MjData(self.model)
         self.renderer = mujoco.Renderer(self.model, size, size)
         self.n_objects = len(world.poses(world.random_start(np.random.default_rng(0))))
@@ -86,7 +91,9 @@ class Film:
             for k in range(self.n_objects):
                 mocap = self._ghost_body(slot, k)
                 if ghost is not None and k in shown:
-                    data.mocap_pos[mocap], data.mocap_quat[mocap] = poses[k]
+                    pos, quat = poses[k]
+                    data.mocap_pos[mocap] = np.add(pos, (0, 0, GHOST_LIFT * (slot + 1)))
+                    data.mocap_quat[mocap] = quat
                     self._color(slot, k, rgba)
                 else:
                     data.mocap_pos[mocap] = (0, 0, -1)
