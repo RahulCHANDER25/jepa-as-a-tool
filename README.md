@@ -5,10 +5,11 @@
 Entry to the Meta Global AI Developer Hackathon (Oct 27 – Nov 4, 2026).
 Website with live episodes: https://rahulchander25.github.io/jepa-as-a-tool/
 
-Muse Spark plays PushT: push a T-shaped block to a goal pose, one straight push at a time. Before each
-real push it can call one tool, `simulate(from_frame, plans)`, which imagines candidate push
-sequences in a learned world model and says, in text, where the T would end up. The world model
-never saw the physics engine; it learned from images only.
+Muse Spark pushes objects to a goal, one straight push at a time, in three worlds: PushT (2D), a 3D
+tabletop and 3D billiards. Before each real push it can call one tool, `simulate(from_frame,
+plans)`, which imagines candidate push sequences in a learned world model and says, in text, where
+things would end up. **One** world model serves the three worlds; it never saw the physics engines,
+it learned from images only.
 
 ## How it works
 
@@ -20,38 +21,55 @@ frame ──▶ V-JEPA 2 (frozen) ──▶ latent ──▶ predictor (+ push) 
 | Part | What it is | Trained here? |
 |---|---|---|
 | **Encoder** | Meta's V-JEPA 2 (ViT-L, `facebook/vjepa2-vitl-fpc64-256`): a 256 px frame becomes 64 tokens × 1,024 | no, frozen |
-| **Predictor** | a 6-layer transformer: latent + push → next latent | yes |
-| **Translator** | latent → pose of the T; the only thing the LLM reads | yes |
+| **Predictor** | a 6-layer transformer: latent + push → next latent; one for the three worlds, not told which one | yes |
+| **Translator** | latent → positions: a shared trunk and one head per world; the only thing the LLM reads | yes |
 | **Tool** | `simulate`: several plans per call, an id for every imagined state (`I1`, `I2`, …) so the agent can continue a branch | — |
 | **Agent** | Muse Spark 1.3 on the Meta Model API, with LangChain tools and our own loop | no |
 
-The same tool also runs on an **oracle** backend (the real PushT physics), which gives the best case
-for an agent with perfect imagination.
+The same tool also runs on an **oracle** backend (the real physics), which gives the best case for
+an agent with perfect imagination. The trained model is on Hugging Face:
+[`racoon25/jepa-as-a-tool`](https://huggingface.co/racoon25/jepa-as-a-tool) (`three-worlds/`).
 
 ## Results
 
-150 tasks (3 families × 50), the same tasks in every setting, Muse Spark 1.3 (contributor mode,
-temperature 0.7), world model v2. Success rate with its 95% interval:
+The main run ([`notebooks/train_and_evaluate.ipynb`](notebooks/train_and_evaluate.ipynb)): one
+world model trained from scratch on the three worlds, then the agent in those worlds and in a fourth
+it never saw. 100 tasks per family, the same tasks in every setting, Muse Spark 1.3 (contributor
+mode), 2,700 episodes. Success rate with its 95% interval; *p*: exact McNemar test, world model vs
+alone, on the same tasks.
 
-| Family | Alone | + World model | + Real physics |
-|---|---|---|---|
-| Move (`translate`) | 92% [81, 97] | 94% [84, 98] | 100% [93, 100] |
-| **Turn (`rotate`)** | **50% [37, 63]** | **76% [63, 86]** | 96% [87, 99] |
-| Move and turn (`pose`) | 84% [71, 92] | 74% [60, 84] | 98% [90, 100] |
+| World | Family | Alone | + World model | + Real physics | *p* |
+|---|---|---|---|---|---|
+| PushT | pose | 83% [74, 89] | 88% [80, 93] | 99% [95, 100] | 0.41 |
+| PushT | **rotate** | 65% [55, 74] | **79% [70, 86]** | 96% [90, 98] | **0.04** |
+| Tabletop (3D) | **pose** | 67% [57, 75] | **89% [81, 94]** | 97% [92, 99] | **< 0.001** |
+| Tabletop (3D) | **rotate** | 57% [47, 66] | **72% [63, 80]** | 97% [92, 99] | **0.02** |
+| Billiards (3D) | shot | 83% [74, 89] | 86% [78, 91] | 100% [96, 100] | 0.69 |
+| Billiards (3D) | bank | 89% [81, 94] | 81% [72, 87] | 100% [96, 100] | 0.15 |
+| Billiards (3D) | carom | 88% [80, 93] | 96% [90, 98] | 100% [96, 100] | 0.06 |
+| **New room** (never seen) | pose | 70% [60, 78] | **11% [6, 19]** | 98% [93, 99] | **< 0.001** |
+| **New room** (never seen) | rotate | 50% [40, 60] | **10% [6, 17]** | 97% [92, 99] | **< 0.001** |
 
-- **Turn:** on the same tasks the world model wins 17 that the agent alone loses and loses 4
-  (exact McNemar test, p = 0.007). It recovers more than half (57%) of the oracle's gain.
-- **Move:** easy without help, as expected.
-- **Move and turn:** the world model hurts (4 won, 9 lost, p = 0.27). With the oracle the agent
-  reaches 98%, so the weak point is the predictions: these tasks need chains of three pushes and the
-  errors add up. After one imagined push 83% of the predictions are within 20 px and 15°; after
-  three, 49%.
-- The agent calls the tool in every episode, imagining 50–77 pushes per task, at about 3.5× the
-  tokens of the agent alone.
+- **The world model helps where it is accurate:** in the 3D tabletop (+22 and +15 points) and on
+  PushT turns (+14).
+- **Billiards:** the agent alone already wins 83–89%, and fast balls are harder to predict (11 px
+  after one push): no significant gain.
+- **A world model that misreads the room is worse than none.** The tabletop's physics, another
+  table, light and camera: the model is off by 32 px after one push, more than predicting that
+  nothing moves (21 px), and the agent, which trusts it, drops from 70% to 11%.
 
-World model accuracy on held-out random pushes (median error): 2.8 px and 1.5° after one push,
-4.2 px and 2.5° after three. On the pushes the agent actually picks, the error is about twice
-as large; near misses, where the push slides past the T, are the worst case.
+World model accuracy on held-out random pushes (median position error, px, on a 512 px table):
+
+| World | 1 push | 2 pushes | 3 pushes | 4 pushes | Nothing moves, 4 pushes |
+|---|---|---|---|---|---|
+| PushT | 3.5 | 4.7 | 5.6 | 5.6 | 80 |
+| Tabletop | 3.8 | 5.6 | 7.8 | 9.2 | 74 |
+| Billiards | 11.3 | 20.3 | 27.3 | 32.7 | 177 |
+| New room | 32.5 | 36.3 | 33.0 | 35.8 | 71 |
+
+The translator alone reads one frame to 2.6 px (PushT), 2.0 px (tabletop) and 5.1 px (billiards).
+The runs before the main one, and what each taught, are in
+[`notebooks/experiments`](notebooks/experiments).
 
 ## Reproduce
 
@@ -62,19 +80,12 @@ cp .env.example .env                        # then set META_API_KEY
 
 | Step | Command | Where, how long |
 |---|---|---|
-| Train the world model | [`notebooks/experiments/train_wm_v2.ipynb`](notebooks/experiments/train_wm_v2.ipynb) (`jat gen`, `jat encode`, `jat train translator`, `jat train predictor`) | GPU ≥ 15 GB, ~4–5 h |
-| World-model accuracy | `uv run jat wm-eval data/random-12k --wm runs/wm-v2` | GPU, minutes |
-| Agent evaluation | [`notebooks/experiments/eval_wm_v2.ipynb`](notebooks/experiments/eval_wm_v2.ipynb), or `META_MODEL=muse-spark-1.3-contributor uv run jat eval --out results/eval-wm-v2 --families translate,rotate,pose --n 50 --settings no_tool,wm_tool,oracle_tool --wm runs/wm-v2` | CPU, ~2–3 h, ~$5–9 |
-| Tables and paired tests | `uv run jat report results/eval-wm-v2` | seconds |
-| Website data | `just export-web --run pusht=results/eval-wm-v2 --wm v2=runs/wm-v2`, then `just web` | seconds |
+| Everything: data, V-JEPA 2 latents, translator, predictor, the 2,700 episodes, reports | [`notebooks/train_and_evaluate.ipynb`](notebooks/train_and_evaluate.ipynb), or `uv run jat pipeline --work main-run --size full --gpus 2 --provider meta` | Kaggle, 2 × T4, ~10 h, one session |
+| The same stages at toy sizes, scripted agent: no GPU, no API | `uv run jat pipeline --work /tmp/dry --size small --provider dry` | CPU, minutes |
+| Tables and paired tests of one world | `uv run jat report main-run/results/tabletop` | seconds |
+| Website data | `just export-web --run pusht=main-run/results/pusht --run tabletop=main-run/results/tabletop --run billiards=main-run/results/billiards --run tabletop-new-look=main-run/results/tabletop-new-look --wm main=main-run/runs/wm`, then `just web` | seconds |
 
-Interrupted evaluations resume: finished episodes are skipped.
-
-**The main run:** [`notebooks/train_and_evaluate.ipynb`](notebooks/train_and_evaluate.ipynb) (Kaggle,
-2 × T4, one session) trains one world model on PushT, the tabletop and billiards at once, then
-evaluates the agent in those three worlds and in a fourth it never saw. `uv run jat pipeline --work
-/tmp/dry --size small --provider dry` runs the same stages at toy sizes on a CPU, with a scripted
-agent: no GPU, no API. The runs that led to it are in [`notebooks/experiments`](notebooks/experiments).
+Interrupted runs resume: finished steps and episodes are skipped.
 
 ## Worlds
 
@@ -91,7 +102,7 @@ One translator reads them all: a shared trunk on V-JEPA 2's latents, and one sma
 ## Use it from any agent (MCP)
 
 ```bash
-uv run jat mcp --world billiards --wm runs/billiards     # or --wm hf:<owner>/<repo>/billiards
+uv run jat mcp --world tabletop --wm hf:racoon25/jepa-as-a-tool/three-worlds
 ```
 
 In Claude Desktop's `claude_desktop_config.json` (or any MCP client):
@@ -99,9 +110,9 @@ In Claude Desktop's `claude_desktop_config.json` (or any MCP client):
 ```json
 {
   "mcpServers": {
-    "jepa-billiards": {
+    "jepa-tabletop": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/jepa-as-a-tool", "jat", "mcp", "--world", "billiards", "--wm", "runs/billiards"]
+      "args": ["run", "--directory", "/path/to/jepa-as-a-tool", "jat", "mcp", "--world", "tabletop", "--wm", "hf:racoon25/jepa-as-a-tool/three-worlds"]
     }
   }
 }
@@ -120,7 +131,7 @@ top view of the table with the imagined states.
 | `src/jat/agent` | prompts, LLM client, agent loop, episode logs |
 | `src/jat/eval` | evaluation grid, metrics, website export, learning from use |
 | `src/jat/pipeline.py`, `mcp_server.py`, `clip.py`, `hub.py` | the main run, the MCP server, 3D videos, Hugging Face upload and download |
-| `notebooks` | the main run (Kaggle), the open-model agent (Colab); `experiments/`: the runs before |
+| `notebooks` | the main run (Kaggle); `experiments/`: the runs before it, and the open-model attempt |
 | `web` | the website (Astro): episode player, dream mode |
 
 ## Built during the hackathon

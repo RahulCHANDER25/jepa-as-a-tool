@@ -229,3 +229,9 @@ plan/
 /scratch/
 
 /looks/
+
+.gemini-key
+
+# Downloaded run archives (results.zip, ...): kept locally, never committed
+/*.zip
+/main-run/
