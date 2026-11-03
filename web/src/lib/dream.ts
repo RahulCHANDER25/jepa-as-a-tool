@@ -2,8 +2,8 @@
 // start state comes with its latent, computed offline (`jat export-dream`). Every push the
 // visitor draws is imagined by the predictor and read by the translator, both in ONNX.
 
-import { drawScene, fitCanvas, type Ghost } from "./draw";
-import { anchor, isBilliards, TABLE, type Point, type State } from "./world";
+import { drawScene, fitCanvas, tablePoint, type Ghost } from "./draw";
+import { anchor, is3D, isBilliards, TABLE, type Point, type State } from "./world";
 import { onThemeChange } from "./theme";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/?$/, "/");
@@ -108,7 +108,8 @@ export function mountDreams() {
 
 function mount(root: HTMLElement) {
   const $ = <T extends Element>(s: string) => root.querySelector<T>(s)!;
-  const canvas = $<HTMLCanvasElement>("canvas");
+  let canvas = $<HTMLCanvasElement>("canvas");
+  const stage = canvas.parentElement!;
   const status = $<HTMLElement>("[data-status]");
   const wake = $<HTMLButtonElement>("[data-wake]");
   const worlds = (root.dataset.worlds ?? "pusht").split(",");
@@ -178,8 +179,24 @@ function mount(root: HTMLElement) {
     draw();
   }
 
+  /** A canvas is 2D or WebGL for life: switching kinds takes a fresh one. */
+  function canvasFor(name: string) {
+    const kind = is3D(name) ? "3d" : "2d";
+    if (canvas.dataset.kind === kind) return;
+    if (canvas.dataset.kind) {
+      const fresh = canvas.cloneNode(false) as HTMLCanvasElement;
+      canvas.replaceWith(fresh);
+      canvas = fresh;
+      fitCanvas(canvas, draw);
+    }
+    canvas.dataset.kind = kind;
+    root.classList.toggle("three", kind === "3d");
+  }
+
   async function load(name: string) {
     world = name;
+    dreamer = null; // nothing draws the old world on the new canvas
+    canvasFor(name);
     root.querySelectorAll<HTMLButtonElement>("[data-world]").forEach((b) =>
       b.setAttribute("aria-pressed", String(b.dataset.world === name)),
     );
@@ -196,22 +213,21 @@ function mount(root: HTMLElement) {
     }
   }
 
-  const point = (e: PointerEvent): Point => {
-    const box = canvas.getBoundingClientRect();
-    return [((e.clientX - box.left) / box.width) * 512, ((e.clientY - box.top) / box.height) * 512];
-  };
-  canvas.addEventListener("pointerdown", (e) => {
-    if (!dreamer || busy) return;
-    canvas.setPointerCapture(e.pointerId);
+  const point = (e: PointerEvent): Point | null => tablePoint(canvas, world, e.clientX, e.clientY);
+  // on the stage, not the canvas: the canvas is replaced when the world changes
+  stage.addEventListener("pointerdown", (e) => {
     const p = point(e);
+    if (!dreamer || busy || !p || e.target !== canvas) return;
+    canvas.setPointerCapture(e.pointerId);
     drag = [p, p];
   });
-  canvas.addEventListener("pointermove", (e) => {
-    if (!drag) return;
-    drag = legal(drag[0], point(e));
+  stage.addEventListener("pointermove", (e) => {
+    const p = point(e);
+    if (!drag || !p) return;
+    drag = legal(drag[0], p);
     draw();
   });
-  canvas.addEventListener("pointerup", async () => {
+  stage.addEventListener("pointerup", async () => {
     if (!drag || !dreamer) return;
     const push = drag;
     drag = null;

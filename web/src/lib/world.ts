@@ -9,7 +9,7 @@ export const TABLE = 512;
 
 // Same T geometry as src/jat/worlds/tblock/shape.py, so ghosts and real T's line up exactly
 // with what the Python side computed.
-const OUTLINE: Point[] = [
+export const OUTLINE: Point[] = [
   [-60, 0], [60, 0], [60, 30], [15, 30], [15, 120], [-15, 120], [-15, 30], [-60, 30],
 ];
 const T_CENTER: Point = [0, 45];
@@ -17,6 +17,8 @@ const BALL_RADIUS = 25; // src/jat/worlds/billiards/world.py
 const RED = 1; // the ball the goal is about
 
 export const isBilliards = (world: string) => world === "billiards";
+/** Worlds simulated in 3D (MuJoCo): the site draws them in 3D too. */
+export const is3D = (world: string) => world !== "pusht";
 
 export function toWorld([x, y, theta]: State, [lx, ly]: Point): Point {
   const c = Math.cos(theta);

@@ -2,7 +2,7 @@
 // Replays one logged episode. `compact` hides the transcript; `autoplay` loops while visible.
 // The default slot, if any, is the figure's caption.
 import { episodeSrc, run as runOf } from "../lib/data";
-import { isBilliards } from "../lib/world";
+import { is3D, isBilliards } from "../lib/world";
 
 interface Props {
   run: string;
@@ -14,12 +14,13 @@ interface Props {
 const { run, episode, title, compact = false, autoplay = false } = Astro.props;
 const src = episodeSrc(run, episode);
 const balls = isBilliards(runOf(run).world);
+const three = is3D(runOf(run).world);
 const object = balls ? "balls" : "T";
 const hasCaption = Astro.slots.has("default");
 ---
 
 <figure
-  class:list={["player", { compact }]}
+  class:list={["player", { compact, three }]}
   data-player
   data-episode={src}
   data-compact={compact ? "1" : undefined}

@@ -249,6 +249,13 @@ figcaption.numbered > p {
   color: var(--muted);
 }
 
+/* The 3D worlds keep the clips' colors: blue T, gold goal, lavender imagined */
+.three {
+  --t-real: #406bb3;
+  --goal: #e0a915;
+  --ghost: #a47cf0;
+}
+
 /* The table canvas */
 .stage canvas {
   display: block;
@@ -737,10 +744,21 @@ figcaption.numbered > p {
 }
 
 /* Line chart */
+/* two per row; an odd last one sits in the middle */
 .horizon-panels {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 16px 40px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+}
+.horizon-panels > section {
+  flex: 1 1 420px;
+  max-width: 100%;
+}
+@media (min-width: 900px) {
+  .horizon-panels > section {
+    max-width: calc(50% - 20px);
+  }
 }
 .horizon-panels h4 {
   margin: 0;

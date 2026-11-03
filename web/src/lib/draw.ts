@@ -1,7 +1,8 @@
 // A world's table on a canvas: goal, real state, imagined ghosts, the pusher. The shapes come
 // from world.ts, so one drawing serves every world.
 
-import { anchor, goalParts, isBilliards, parts, TABLE, type Point, type State } from "./world";
+import { drawScene3d, tablePoint3d } from "./draw3d";
+import { anchor, goalParts, is3D, isBilliards, parts, TABLE, type Point, type State } from "./world";
 
 const PUSHER_RADIUS = 15;
 
@@ -82,7 +83,16 @@ export function fitCanvas(canvas: HTMLCanvasElement, onResize: () => void) {
   resize();
 }
 
+/** The table point under the pointer (3D worlds: where the ray meets the table). */
+export function tablePoint(canvas: HTMLCanvasElement, world: string, clientX: number, clientY: number): Point | null {
+  if (is3D(world)) return tablePoint3d(canvas, clientX, clientY);
+  const box = canvas.getBoundingClientRect();
+  return [((clientX - box.left) / box.width) * TABLE, ((clientY - box.top) / box.height) * TABLE];
+}
+
+/** A canvas draws one kind of world for its whole life: 2D, or 3D through WebGL. */
 export function drawScene(canvas: HTMLCanvasElement, scene: Scene) {
+  if (is3D(scene.world)) return drawScene3d(canvas, scene);
   const ctx = canvas.getContext("2d")!;
   const c = colors(canvas);
   const { world } = scene;
