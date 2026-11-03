@@ -33,7 +33,7 @@ import DreamTable from "../components/DreamTable.astro";
 import Clip from "../components/Clip.astro";
 
 <p class="lede">
-  Some actions cannot be taken back. A push sends a block sliding; a cue stroke sends a ball
+  Some actions cannot be taken back. A push sends a block sliding. A cue stroke sends a ball
   rolling. People play such moves in their head first. What if an AI agent could do the same:
   try a move in an imagined world, look at what happens, and only then act? We give an LLM agent
   that imagined world, a world model built on Meta's V-JEPA 2. On a 3D tabletop, Muse Spark
@@ -55,8 +55,8 @@ import Clip from "../components/Clip.astro";
   >
     One task on the 3D tabletop, as it ran: bring the blue T onto the gold one. Above the video,
     the agent's own words. In the video, each move has three beats: lavender see-through T's
-    appear, one for each push the agent imagines (the world model's answer); one of them turns
-    green, the push it keeps; then the white pusher makes that push for real. Two moves later
+    appear, one for each push the agent imagines (the world model's answer). One of them turns
+    green: the push it keeps. Then the white pusher makes that push for real. Two moves later
     the T is on the goal. Alone, the agent fails this task.
   </Clip>
 </div>
@@ -65,17 +65,17 @@ import Clip from "../components/Clip.astro";
 
 Language models reason well in words, but they cannot run physics in their head. Asked to turn a
 block by pushing it, an LLM guesses where to push and has no way to check the guess before it
-acts. A wrong push cannot be undone; the next one has to start from wherever the block landed.
+acts. A wrong push cannot be undone, and the next one has to start from wherever the block landed.
 
 We give the agent a way to check: a world model, behind a tool. Before each real push, the agent
 can ask "what if I push here?" as many times as it likes, compare the answers, and keep the best
-one. The world model learned physics from pictures alone; the LLM brings the language and the
+one. The world model learned physics from pictures alone. The LLM brings the language and the
 reasoning. Neither is retrained for the other.
 
-Same task, same model. On the left the LLM acts on its own; on the right it can imagine first.
+Same task, same model. On the left the LLM acts on its own. On the right it can imagine first.
 
 <Compare run="pusht" task="rotate-0-044">
-  A PushT task where the goal needs a turn. Alone, the agent guesses; with the world model, it
+  A PushT task where the goal needs a turn. Alone, the agent guesses. With the world model, it
   tries pushes in its imagination first.
 </Compare>
 
@@ -89,7 +89,7 @@ Same task, same model. On the left the LLM acts on its own; on the right it can 
 - **LLMs meet JEPA.** LLM-JEPA (Huang, LeCun & Balestriero, ICLR 2026) adds a JEPA objective to
   the training of an LLM, so the LLM itself learns better embeddings. We take the other road and
   change nothing inside the LLM. The physics lives in a separate world model, trained on
-  pictures; the language and the high-level reasoning stay in the LLM. They meet at inference
+  pictures. The language and the high-level reasoning stay in the LLM. They meet at inference
   time, through tool calls: the world model is a place to try a move before making it.
 - **LLMs with a simulator.** Mind's Eye (Liu et al., ICLR 2023) answers physics questions by
   running them in MuJoCo, and RAP (Hao et al., EMNLP 2023) uses the LLM as its own world model
@@ -104,7 +104,7 @@ Same task, same model. On the left the LLM acts on its own; on the right it can 
 
 Like the agent of _World Models_, ours has a part that sees, a part that predicts and a part that
 decides. The difference: the part that decides is an LLM, and it uses the other two through tool
-calls. It sends the pushes it wants to try; it gets back, as text, where the objects would end up.
+calls. It sends the pushes it wants to try and gets back, as text, where the objects would end up.
 It can then try more pushes from any imagined state, to plan several moves ahead.
 
 <Pipeline />
@@ -136,7 +136,7 @@ another room.
     { run: "tabletop-new-look", id: "pose-0-038__wm_tool__s0" },
   ]}
 >
-  One task per world, each solved with the world model. PushT is seen from above; the 3D worlds
+  One task per world, each solved with the world model. PushT is seen from above, the 3D worlds
   from a little further back than the world model's camera, so the whole table fits. All four
   share one 512 × 512 px table and the same push action.
 </WorldCards>
@@ -149,14 +149,14 @@ model answers each one, and the agent keeps one and makes it for real.
 <ImagineFan run="pusht" episode="rotate-0-021__wm_tool__s0">
   A PushT task, move by move. Left: the real table. Right: every push the agent imagined from it,
   one card each, drawn where the world model says the T would end up, with its distance to the
-  goal. The card it keeps lights up green; then the real pusher makes that push, and you can see
+  goal. The card it keeps lights up green. Then the real pusher makes that push, and you can see
   how close the imagined T was to the real one.
 </ImagineFan>
 
 ## Watch it think
 
 Whole episodes, playing by themselves. The label under the table says what the agent is doing
-(_Imagine_, _Choose_ or _Push_); the list on the right is everything it said and did. Click a line
+(_Imagine_, _Choose_ or _Push_). The list on the right is everything it said and did. Click a line
 to jump there, or ❚❚ to pause.
 
 <WorldTabs
@@ -180,7 +180,7 @@ dream. Not sure where to start? _Show me a push_ makes one for you.
 
 <DreamTable>
   Dream mode. V-JEPA 2 is too large for a web page, so each start comes with its latent computed
-  in advance; the predictor and the translator run here.
+  in advance. The predictor and the translator run here.
 </DreamTable>
 
 ## Results
@@ -221,29 +221,32 @@ Per task family on PushT:
   (<Stat run="pusht" setting="wm_tool" family="rotate" value="p" />).
 </ResultsChart>
 
-## The better it imagines, the more it helps
+## How far ahead can it imagine?
 
-How far off is the world model? The longer the chain of imagined pushes, the more its errors add
-up. On PushT and the tabletop it stays within a few pixels; on billiards, much less so.
+How far off is the world model? The chart counts the imagined states that land within 20 px (and
+15° for the T) of where the real physics puts them. The longer the chain of imagined pushes, the
+more the errors add up. After four pushes in a row, most imagined states are still right on PushT
+and on the tabletop, the two worlds where the world model helps. On billiards, where balls roll
+fast and collide, most are already wrong.
 
-<HorizonChart worlds={["pusht", "tabletop", "billiards", "tabletop-new-look"]} />
+<HorizonChart worlds={["pusht", "tabletop", "billiards"]} />
 
-Put next to the results, this gives one simple rule: where the world model is accurate, the agent
-gains; where it is not, the agent gains nothing, and can even be misled. The clearest case is the
-fourth world. It has the tabletop's physics, but a new look: another table, another light,
-another color, and the camera moved. The world model never saw it, and it already misreads the
-picture before any imagined push. Alone, the agent solves
-<Stat run="tabletop-new-look" setting="no_tool" /> of the tasks there; with the world model,
-<Stat run="tabletop-new-look" setting="wm_tool" />. It trusts what the tool tells it.
+## A wrong world model is worse than none
+
+The fourth world has the tabletop's physics, but a new look: another table, another light, another
+color, and the camera moved. The world model never saw it. It misreads the picture before any
+imagined push (only 9% of the real frames are read within 20 px), and then tells the agent confident, wrong positions. The agent trusts the tool.
+Alone, it solves <Stat run="tabletop-new-look" setting="no_tool" /> of the tasks there. With the
+world model, only <Stat run="tabletop-new-look" setting="wm_tool" />.
 
 <ResultsChart runs={["tabletop", "tabletop-new-look"]}>
-  The same physics, two looks. On the look it was trained on, the world model helps; in the new
+  The same physics, two looks. On the look it was trained on, the world model helps. In the new
   room it misleads the agent.
 </ResultsChart>
 
-This is the most useful result of the project, because it says exactly what to improve. The agent
-side is ready: with a perfect world model it solves almost every task. What limits it is how well
-the world model imagines, and a world model gets better with more and more varied data.
+This is also the most useful result of the project, because it says exactly what to improve. The
+agent side is ready: with a perfect world model it solves almost every task. What limits it is
+how well the world model imagines, and a world model gets better with more and more varied data.
 
 ## Limits
 
@@ -266,7 +269,7 @@ the world model imagines, and a world model gets better with more and more varie
   [Hugging Face](https://huggingface.co/racoon25/jepa-as-a-tool), and served over MCP
   (`jat mcp`), so any agent can imagine before it acts.
 
-An LLM brings the words and the reasoning; a world model brings the physics. Put together, the
+An LLM brings the words and the reasoning. A world model brings the physics. Put together, the
 agent does what people do before a move that cannot be undone: it imagines first.
 
 ## Built during the hackathon

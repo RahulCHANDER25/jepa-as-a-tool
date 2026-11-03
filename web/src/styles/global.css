@@ -467,8 +467,13 @@ figcaption.numbered > p {
   margin: 0;
 }
 .hero {
-  max-width: 560px;
+  max-width: 600px;
   margin: 8px auto 40px;
+  padding: 18px 20px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.08);
 }
 .lede {
   font-size: 1.1rem;
