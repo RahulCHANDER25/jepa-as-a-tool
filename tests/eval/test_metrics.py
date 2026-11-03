@@ -1,8 +1,10 @@
 import math
 
-from jat.env.tasks import sample_task
 from jat.eval.metrics import mcnemar_p, paired, summarize, wilson_interval
 from jat.eval.run import run_random
+from jat.worlds import get_world
+
+sample_task = get_world("pusht").sample_task
 
 
 def test_wilson_interval_contains_the_rate():

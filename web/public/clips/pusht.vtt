@@ -1,0 +1,16 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:00.800
+I'll test several push directions to find how to move the T toward the goal.
+
+00:00:00.800 --> 00:00:03.700
+I've found a promising two-push approach. Now I'll fine-tune the final positioning.
+
+00:00:03.700 --> 00:00:06.533
+A single push looks viable here. I'll check the best candidates for a one-push solution.
+
+00:00:06.533 --> 00:00:09.367
+I found pushes that should reach the goal. I'll fine-tune them for the best margin.
+
+00:00:09.367 --> 00:00:11.367
+Success: 13 px from the goal.

@@ -3,15 +3,8 @@ import math
 import torch
 
 from jat.wm.encoder import pool_tokens
-from jat.wm.models import (
-    Predictor,
-    Translator,
-    keypoint_loss,
-    load_module,
-    output_to_pose,
-    pose_to_output,
-    save_module,
-)
+from jat.wm.models import Predictor, Translator, load_module, save_module
+from jat.wm.readouts import keypoint_loss, output_to_pose, pose_to_output, readout
 
 POSES = torch.tensor([[256.0, 200.0, 0.0], [100.0, 400.0, 3.0], [300.0, 50.0, -1.2]])
 
@@ -34,12 +27,31 @@ def test_untrained_predictor_says_nothing_moves():
 
 
 def test_saved_module_gives_the_same_outputs(tmp_path):
-    model = Translator(4, 8).eval()
+    model = Translator(4, 8, heads={"pusht": 4, "billiards": 4}).eval()
     save_module(model, tmp_path / "t.pt", note="x")
     loaded, extra = load_module(Translator, tmp_path / "t.pt")
     z = torch.randn(3, 4, 8)
-    torch.testing.assert_close(loaded(z), model(z))
+    for world in ("pusht", "billiards"):
+        torch.testing.assert_close(loaded(z, world), model(z, world))
     assert extra == {"note": "x"}
+
+
+def test_a_translator_from_before_the_heads_loads_as_a_pusht_head(tmp_path):
+    new = Translator(4, 8, heads={"pusht": 4}).eval()
+    state = {k.replace("heads.pusht", "mlp.4"): v for k, v in new.state_dict().items()}
+    config = {k: v for k, v in new.config.items() if k != "heads"}
+    torch.save({"config": config, "state": state}, tmp_path / "old.pt")
+    old, _ = load_module(Translator, tmp_path / "old.pt")
+    z = torch.randn(3, 4, 8)
+    torch.testing.assert_close(old(z, "pusht"), new(z, "pusht"))
+
+
+def test_points_readout_round_trips_and_measures_the_worst_ball():
+    points = readout("billiards")
+    states = torch.tensor([[100.0, 200.0, 300.0, 400.0]])
+    torch.testing.assert_close(points.decode(points.encode(states)), states)
+    px, deg = points.errors(states + torch.tensor([3.0, 4.0, 0.0, 1.0]), states)
+    assert px[0] == 5.0 and deg[0] == 0.0
 
 
 def test_pooling_keeps_a_square_grid_of_normalized_tokens():

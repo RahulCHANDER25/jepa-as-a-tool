@@ -227,3 +227,12 @@ plan/
 /runs/
 /results/
 /scratch/
+
+/looks/
+
+.gemini-key
+
+# Run archives downloaded from Kaggle/Colab (archives/results.zip is the main run), and the
+# main run's work folder: kept locally, never committed
+/archives/
+/main-run/

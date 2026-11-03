@@ -1,5 +1,7 @@
-from jat.env.tasks import sample_task
 from jat.eval.run import run_grid, run_random
+from jat.worlds import get_world
+
+sample_task = get_world("pusht").sample_task
 
 
 def test_random_baseline_is_reproducible():

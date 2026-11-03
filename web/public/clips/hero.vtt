@@ -1,0 +1,13 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:00.800
+I'll test several push directions in simulation to find one that moves the T toward the goal.
+
+00:00:00.800 --> 00:00:03.633
+I've identified a two-push sequence that reaches the goal in simulation. I'll execute the first push now.
+
+00:00:03.633 --> 00:00:06.367
+Simulation shows the alignment push succeeds with good margin. I'll execute it on the real table.
+
+00:00:06.367 --> 00:00:08.367
+Success: 1 px from the goal.

@@ -1,0 +1,45 @@
+---
+// For each real push of one episode: the pushes the agent imagined, as cards; the one it keeps;
+// then the real push. Plays by itself while in view. The default slot is the caption.
+import { episodeSrc } from "../lib/data";
+
+interface Props {
+  run: string;
+  episode: string;
+}
+const { run, episode } = Astro.props;
+---
+
+<figure class="fan wide" data-fan data-episode={episodeSrc(run, episode)}>
+  <div class="fan-head">
+    <span class="phase" data-phase>1 · Imagine</span>
+    <p class="fan-say" data-say aria-live="polite">Loading…</p>
+  </div>
+  <div class="fan-body">
+    <div class="fan-table">
+      <p class="fan-title">The real table (zoomed in)</p>
+      <canvas data-table role="img" aria-label="The real table: the T, the goal outline, and the pusher when it moves"></canvas>
+    </div>
+    <div class="fan-imagined">
+      <p class="fan-title">What the world model imagines, one card per push, and how far it is from the goal</p>
+      <div class="fan-cards" data-cards></div>
+    </div>
+  </div>
+  <div class="controls">
+    <button type="button" data-play>▶ Play</button>
+    <span class="counter" data-counter></span>
+    <ul class="legend">
+      <li><i class="k-real" />real T</li>
+      <li><i class="k-goal" />goal</li>
+      <li><i class="k-ghost" />imagined</li>
+      <li><i class="k-chosen" />kept</li>
+      <li><i class="k-pusher" />pusher</li>
+    </ul>
+  </div>
+  {Astro.slots.has("default") && <figcaption class="numbered"><slot /></figcaption>}
+</figure>
+
+<script>
+  import { mountFans } from "../lib/fan";
+  mountFans();
+</script>

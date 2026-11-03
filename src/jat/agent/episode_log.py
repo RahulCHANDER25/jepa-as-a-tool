@@ -3,9 +3,8 @@
 import numpy as np
 from pydantic import BaseModel
 
-from jat.env.pusht import Push, World
-from jat.env.tasks import Outcome, Task
 from jat.tool.frames import FrameStore
+from jat.worlds.base import Outcome, Push, Task, World
 
 SCHEMA_VERSION = 1
 
@@ -13,12 +12,12 @@ SCHEMA_VERSION = 1
 class FrameLog(BaseModel):
     id: str
     kind: str  # "real" | "imagined"
-    pose: list[float]  # what the LLM was told
+    pose: list[float]  # the world state the LLM was told
     # Real frame: the table. Imagined frame: the real physics replayed along the same branch.
     true_pose: list[float]
     parent: str | None = None
     push: Push | None = None
-    # Real frames only: pusher x, y, T x, y, theta per 0.1 s, for replays.
+    # Real frames only: pusher x, y, then the world state, per 0.1 s, for replays.
     trajectory: list[list[float]] = []
 
 
@@ -58,7 +57,7 @@ class EpisodeLog(BaseModel):
     wall_time_s: float
 
 
-def frame_logs(store: FrameStore) -> list[FrameLog]:
+def frame_logs(store: FrameStore, world: World) -> list[FrameLog]:
     """All frames in creation order, with the true pose filled in for imagined ones."""
     true: dict[str, np.ndarray] = {}
     logs = []
@@ -66,7 +65,7 @@ def frame_logs(store: FrameStore) -> list[FrameLog]:
         if frame.kind == "real":
             true[frame.id] = frame.true_pose
         else:
-            true[frame.id] = np.asarray(World(true[frame.parent]).push(frame.push).pose)
+            true[frame.id] = np.asarray(world.push(true[frame.parent], frame.push).state)
         logs.append(
             FrameLog(
                 id=frame.id,

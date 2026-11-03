@@ -7,9 +7,9 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 
 from jat.agent.episode_log import AgentInfo, EpisodeLog, ToolCallLog, TurnLog, frame_logs
 from jat.agent.prompts import system_prompt
-from jat.env.tasks import Task, check
 from jat.tool.backends import Backend
 from jat.tool.session import Budget, Session
+from jat.worlds.base import Task
 
 MAX_TURNS = 40
 MAX_NUDGES = 3  # replies in a row without a tool call before giving up
@@ -76,16 +76,16 @@ def run_episode(
         messages.append(HumanMessage(f"Reply with a tool call: {', '.join(by_name)}."))
 
     session.stop("max_turns")  # no-op when the episode already ended for another reason
-    final_pose = session.world.pose()
+    final_pose = session.state
     return EpisodeLog(
         episode_id=episode_id,
         setting=setting,
         backend=backend.name,
         agent=agent,
         task=task,
-        frames=frame_logs(session.frames),
+        frames=frame_logs(session.frames, session.world),
         turns=turns,
-        outcome=check(task, final_pose),
+        outcome=session.world.check(task, final_pose),
         final_pose=final_pose.tolist(),
         stop_reason=session.stop_reason,
         wall_time_s=time.time() - started,

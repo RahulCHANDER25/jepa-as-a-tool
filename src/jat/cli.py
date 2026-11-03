@@ -6,6 +6,8 @@ from typing import Annotated
 import typer
 from dotenv import load_dotenv
 
+from jat.worlds import WORLDS, get_world
+
 app = typer.Typer(no_args_is_help=True, help="jepa-as-a-tool pipeline.")
 
 
@@ -18,19 +20,29 @@ def _csv(value: str) -> list[str]:
     return [v.strip() for v in value.split(",") if v.strip()]
 
 
+WORLD_HELP = f"World: {' | '.join(WORLDS)}."
+
+
+def _world(name: str):
+    try:
+        return get_world(name)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from None
+
+
 @app.command()
 def tasks(
     family: Annotated[str, typer.Argument(help="translate | rotate | pose")],
     n: int = 5,
     seed: int = 0,
+    world: str = typer.Option("pusht", help=WORLD_HELP),
 ) -> None:
-    """Print sampled tasks: start pose, goal, and the reference plan length."""
-    from jat.env import geometry as geo
-    from jat.env.tasks import sample_tasks
-
-    for task in sample_tasks(family, n, seed):
+    """Print sampled tasks: start state, goal, and the reference plan length."""
+    w = _world(world)
+    for i in range(n):
+        task = w.sample_task(family, seed, i)
         typer.echo(f"{task.id}  ({len(task.ref_plan)}-push reference plan)\n  {task.text}")
-        typer.echo("  start: " + geo.pose_text(task.start, task.goal).replace("\n", "\n  "))
+        typer.echo("  start: " + w.state_text(task.start, task.goal).replace("\n", "\n  "))
 
 
 @app.command()
@@ -40,15 +52,17 @@ def gen(
     steps: int = 6,
     seed: int = 0,
     workers: int = 4,
+    world: str = typer.Option("pusht", help=WORLD_HELP),
 ) -> None:
-    """Generate random-push episodes in PushT (CPU)."""
+    """Generate random-push episodes in a world's physics (CPU)."""
     from jat.wm.data import generate
 
-    rollouts = generate(episodes, steps, seed, workers=workers)
+    _world(world)
+    rollouts = generate(episodes, steps, seed, workers=workers, world=world)
     rollouts.save(out)
     typer.echo(
         f"{episodes} episodes x {steps} pushes -> {out / 'rollouts.npz'}  "
-        f"(T moved in {rollouts.moved.mean():.0%} of pushes, jammed in {rollouts.jammed.mean():.1%})"
+        f"(something moved in {rollouts.moved.mean():.0%} of pushes, jammed in {rollouts.jammed.mean():.1%})"
     )
 
 
@@ -74,51 +88,229 @@ app.add_typer(train_app, name="train")
 
 @train_app.command("translator")
 def train_translator(
-    data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
+    data: Annotated[
+        list[Path], typer.Argument(help="Dataset folders with latents, one per world.")
+    ],
     out: Annotated[Path, typer.Option(help="Run folder, e.g. runs/wm.")],
     steps: int = 5000,
     batch: int = 256,
     lr: float = 1e-3,
+    trunk_from: Annotated[
+        Path | None, typer.Option(help="translator.pt whose trunk to reuse, frozen: heads only.")
+    ] = None,
 ) -> None:
-    """Latent -> pose. Its test error says whether V-JEPA 2 latents show where the T is."""
+    """Latent -> state, one head per world on a shared trunk. Its test error says whether
+    V-JEPA 2 latents show each world's state."""
     from jat.wm import train
     from jat.wm.dataset import LatentData
     from jat.wm.encoder import default_device
 
-    result = train.train_translator(LatentData(data, default_device()), out, steps, batch, lr)
-    test = result["test"]
-    typer.echo(
-        f"\nTranslator on test frames: median {test['px_median']:.1f} px, {test['deg_median']:.1f}°"
-        f" (90% under {test['px_p90']:.1f} px, {test['deg_p90']:.1f}°)"
-    )
+    datasets = [LatentData(folder, default_device()) for folder in data]
+    result = train.train_translator(datasets, out, steps, batch, lr, trunk_from=trunk_from)
+    for world, errors in result.items():
+        test = errors["test"]
+        typer.echo(
+            f"\n{world}: translator on test frames: median {test['px_median']:.1f} px, "
+            f"{test['deg_median']:.1f}° (90% under {test['px_p90']:.1f} px, {test['deg_p90']:.1f}°)"
+        )
 
 
 @train_app.command("predictor")
 def train_predictor(
-    data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
-    out: Annotated[Path, typer.Option(help="Run folder holding translator.pt.")],
+    data: Annotated[
+        list[Path], typer.Argument(help="Dataset folders with latents, one per world.")
+    ],
+    out: Annotated[Path, typer.Option(help="Run folder; the predictor is written here.")],
     steps: int = 20000,
     batch: int = 64,
     rollout: int = typer.Option(3, help="Pushes chained per training sample."),
     lr: float = 3e-4,
-    keypoint_weight: float = 1.0,
+    readout_weight: float = 1.0,
     idm_weight: float = 0.1,
+    translator: Annotated[
+        Path | None, typer.Option(help="Translator to read through. Default: <out>/translator.pt.")
+    ] = None,
+    init: Annotated[Path | None, typer.Option(help="Predictor checkpoint to start from.")] = None,
+    extra: Annotated[
+        Path | None, typer.Option(help="Second dataset of the same world, e.g. `jat learn-data`.")
+    ] = None,
+    extra_share: float = typer.Option(0.5, help="Share of the batches drawn from --extra."),
 ) -> None:
-    """(latent, push) -> next latent, trained over chains of pushes."""
+    """(latent, push) -> next latent, trained over chains of pushes, on one or more worlds."""
     from jat.wm import train
     from jat.wm.dataset import LatentData
     from jat.wm.encoder import default_device
 
+    device = default_device()
     train.train_predictor(
-        LatentData(data, default_device()),
+        [LatentData(folder, device) for folder in data],
         out,
         steps=steps,
         batch=batch,
         rollout=rollout,
         lr=lr,
-        keypoint_weight=keypoint_weight,
+        readout_weight=readout_weight,
         idm_weight=idm_weight,
+        translator_path=translator,
+        init=init,
+        extra=LatentData(extra, device) if extra else None,
+        extra_share=extra_share,
     )
+
+
+@app.command()
+def transfer(
+    data: Annotated[Path, typer.Argument(help="Dataset folder of the new world, with latents.")],
+    trunk_from: Annotated[Path, typer.Option(help="translator.pt trained on other worlds.")],
+    out: Annotated[Path, typer.Option(help="Folder for the table and the trained heads.")],
+    budgets: str = typer.Option("250,1000,6000", help="Training episodes to try."),
+    steps: int = 3000,
+) -> None:
+    """Transfer test: a head on a frozen trunk vs a translator from scratch, per label budget."""
+    from jat.wm import train
+    from jat.wm.dataset import LatentData
+    from jat.wm.encoder import default_device
+
+    data_ = LatentData(data, default_device())
+    train.transfer_test(data_, trunk_from, out, [int(b) for b in _csv(budgets)], steps)
+
+
+@app.command(name="learn-data")
+def learn_data(
+    out: Annotated[Path, typer.Argument(help="Dataset folder to write; then `jat encode` it.")],
+    runs: Annotated[list[Path], typer.Option("--run", help="Evaluation run folder(s).")],
+    limit: Annotated[int | None, typer.Option(help="Keep a random subset (dry runs).")] = None,
+) -> None:
+    """Learning from use: the agent's imagined pushes and their true results, as a dataset."""
+    from jat.eval.learn import transitions
+
+    rollouts = transitions(runs, limit=limit)
+    rollouts.save(out)
+    typer.echo(
+        f"{rollouts.n_episodes} one-push episodes ({rollouts.world}) -> {out / 'rollouts.npz'}  "
+        f"(something moved in {rollouts.moved.mean():.0%})"
+    )
+
+
+@app.command()
+def preflight(gpus: int = typer.Option(0, help="GPUs the run will use (0: CPU).")) -> None:
+    """Check every module imports, and that a job on each GPU sees CUDA and renders the 3D worlds."""
+    from jat.pipeline import preflight as check
+
+    check(gpus)
+
+
+@app.command()
+def pipeline(
+    work: Annotated[Path, typer.Option(help="Folder for data, runs, results and logs.")],
+    size: str = typer.Option("full", help="full | small (toy sizes, for a dry run)."),
+    gpus: int = typer.Option(0, help="GPUs to spread GPU steps over (0: CPU)."),
+    provider: str = typer.Option("meta", help="meta | local | dry (scripted agent, no API)."),
+    eval_workers: int = 8,
+) -> None:
+    """The main run, stage after stage. See notebooks/train_and_evaluate.ipynb."""
+    from jat.pipeline import Pipeline
+
+    Pipeline(work, size, gpus, provider, eval_workers).run_all()
+
+
+@app.command()
+def mcp(
+    world: str = typer.Option("pusht", help=WORLD_HELP),
+    wm: Annotated[
+        str | None,
+        typer.Option(
+            help="World model run folder or hf:<owner>/<repo>/<run>. Without it, imagination "
+            "is the real physics."
+        ),
+    ] = None,
+) -> None:
+    """Serve the tools over MCP (stdio), for Claude Desktop, Cursor or any MCP client."""
+    from jat.hub import resolve_run
+    from jat.mcp_server import Game, build_server
+
+    _world(world)
+    build_server(Game(world, resolve_run(wm) if wm else None)).run("stdio")
+
+
+@app.command(name="export-dream")
+def export_dream(
+    wm: Annotated[str, typer.Option(help="World model run folder or hf:<owner>/<repo>/<run>.")],
+    out: Annotated[Path, typer.Option(help="Folder for the browser, e.g. web/public/dream/pusht.")],
+    starts: int = typer.Option(12, help="Start states, taken from the world's evaluation tasks."),
+    world: str | None = typer.Option(None, help="World to export. Default: the first trained on."),
+) -> None:
+    """Dream mode: the predictor and translator as ONNX for the browser, with V-JEPA 2
+    latents of a few start states."""
+    from itertools import cycle, islice
+
+    from jat.hub import resolve_run
+    from jat.wm.dream import export_dream as export
+    from jat.wm.models import WorldModel
+
+    if world:
+        _world(world)
+    world_model = WorldModel.load(resolve_run(wm), world=world)
+    families = list(islice(cycle(world_model.world.families), starts))
+    states = [world_model.world.sample_task(f, 0, i).start for i, f in enumerate(families)]
+    manifest = export(world_model, states, out)
+    check = manifest["check"]
+    typer.echo(
+        f"{len(states)} starts -> {out}; ONNX vs PyTorch over {check['pushes']} imagined pushes: "
+        f"median {check['median_px_gap']:.2f} px apart, at most {check['max_px_gap']:.2f} px"
+    )
+
+
+@app.command()
+def clip(
+    episode: Annotated[Path, typer.Argument(help="Episode log of a 3D world (.json).")],
+    out: Annotated[Path, typer.Option(help="Video file, e.g. clips/rotate.mp4.")],
+    size: int = 512,
+) -> None:
+    """A 3D episode as a video: the imagined plans, the chosen one in green, the real push."""
+    from jat.agent.episode_log import EpisodeLog
+    from jat.clip import render_clip
+
+    log = EpisodeLog.model_validate_json(episode.read_text())
+    typer.echo(f"{render_clip(log, out, size)}")
+
+
+@app.command()
+def publish(
+    runs: Annotated[list[str], typer.Argument(help="name=folder, e.g. tabletop=runs/tabletop.")],
+    repo: Annotated[str, typer.Option(help="Hugging Face model repo, <owner>/<name>.")],
+    private: bool = False,
+) -> None:
+    """Upload trained runs (model files only) to the Hugging Face Hub. Needs HF_TOKEN."""
+    from jat.hub import publish as upload
+
+    folders = {}
+    for item in runs:
+        name, sep, folder = item.partition("=")
+        if not sep:
+            raise typer.BadParameter(f"expected name=folder, got {item!r}")
+        folders[name] = Path(folder)
+    typer.echo(upload(repo, folders, private))
+
+
+@app.command()
+def show(
+    world: Annotated[str | None, typer.Option(help=f"{WORLD_HELP} Default: every world.")] = None,
+    out: Path = Path("looks"),
+    interactive: bool = typer.Option(False, help="3D worlds: open MuJoCo's viewer instead."),
+    seed: int = 0,
+) -> None:
+    """What a world looks like: the frames V-JEPA 2 sees (png) and random pushes (mp4)."""
+    from jat import show as viewer
+
+    if interactive:
+        if world is None:
+            raise typer.BadParameter("--interactive needs --world")
+        viewer.interactive(_world(world).name, seed)
+        return
+    for name in [_world(world).name] if world else WORLDS:
+        image, video = viewer.look(name, out, seed)
+        typer.echo(f"{name}: {image}  {video}")
 
 
 @app.command(name="wm-eval")
@@ -126,8 +318,16 @@ def wm_eval(
     data: Annotated[Path, typer.Argument(help="Dataset folder with latents.")],
     wm: Annotated[Path, typer.Option(help="Run folder with translator.pt and predictor.pt.")],
     split: str = "test",
+    head: Annotated[
+        str | None, typer.Option(help="Read with this world's head. Default: the data's world.")
+    ] = None,
+    out: Annotated[
+        Path | None, typer.Option(help="JSON file. Default: <wm>/wm_eval_<world>.json.")
+    ] = None,
 ) -> None:
-    """Imagined pose vs true pose after 0, 1, 2, ... pushes. No LLM."""
+    """Imagined state vs true state after 0, 1, 2, ... pushes. No LLM."""
+    import json
+
     from jat.wm.data import TEST, VAL
     from jat.wm.dataset import LatentData
     from jat.wm.encoder import default_device
@@ -137,22 +337,29 @@ def wm_eval(
     device = default_device()
     translator, _ = load_module(Translator, wm / "translator.pt", device)
     predictor, _ = load_module(Predictor, wm / "predictor.pt", device)
+    data_ = LatentData(data, device)
     rows = rollout_errors(
-        LatentData(data, device), predictor, translator, {"val": VAL, "test": TEST}[split]
+        data_, predictor, translator, {"val": VAL, "test": TEST}[split], head=head
     )
     typer.echo(format_rows(rows))
+    out = out or wm / f"wm_eval_{data_.world}.json"
+    out.write_text(json.dumps({split: rows}, indent=1))
 
 
 @app.command(name="eval")
 def eval_(
     out: Annotated[Path, typer.Option(help="Run folder; episodes already in it are skipped.")],
+    world: str = typer.Option("pusht", help=WORLD_HELP),
     families: str = "rotate",
     n: int = 30,
     task_seed: int = 0,
     settings: str = "no_tool,oracle_tool,random",
     wm: Annotated[
-        Path | None, typer.Option(help="World model run folder; needed for wm_tool.")
-    ] = None,
+        list[str],
+        typer.Option(
+            help="World model run folder for wm_tool; tag=folder for a setting wm_tool@tag."
+        ),
+    ] = [],  # noqa: B006 (typer reads the default, never mutates it)
     seeds: int = 1,
     provider: str = "meta",
     temperature: float = 0.7,
@@ -162,19 +369,33 @@ def eval_(
     from jat.agent.episode_log import AgentInfo
     from jat.agent.llm import chat_model
     from jat.agent.prompts import PROMPT_VERSION
-    from jat.env.tasks import sample_tasks
     from jat.eval.metrics import format_table, summarize
     from jat.eval.run import run_grid
 
-    task_list = [t for f in _csv(families) for t in sample_tasks(f, n, task_seed)]
+    w = _world(world)
+    task_list = [w.sample_task(f, task_seed, i) for f in _csv(families) for i in range(n)]
     setting_list = _csv(settings)
-    world_model = None
-    if "wm_tool" in setting_list:
-        if wm is None:
-            raise typer.BadParameter("wm_tool needs --wm <run folder>")
+    from jat.hub import resolve_run
+
+    folders = {}
+    for item in wm:
+        tag, sep, folder = item.rpartition("=")
+        folders[tag if sep else ""] = resolve_run(folder)
+    world_models = {}
+    for setting in setting_list:
+        base, _, tag = setting.partition("@")
+        if base != "wm_tool" or tag in world_models:
+            continue
+        if tag not in folders:
+            raise typer.BadParameter(f"{setting} needs --wm {tag + '=' if tag else ''}<run folder>")
+        from jat.wm.encoder import default_device
         from jat.wm.models import WorldModel
 
-        world_model = WorldModel.load(wm)
+        # Rendered with the task's world: an evaluation-only world uses another world's model.
+        try:
+            world_models[tag] = WorldModel.load(folders[tag], default_device(), world=w.name)
+        except ValueError as error:
+            raise typer.BadParameter(str(error)) from error
 
     def model_factory():
         model = chat_model(provider, temperature)
@@ -195,7 +416,7 @@ def eval_(
         model_factory if needs_llm else None,
         out,
         workers,
-        world_model,
+        world_models,
     )
     typer.echo("\n" + format_table(summarize(logs)))
     if failures:
@@ -224,7 +445,10 @@ def report(run: Annotated[Path, typer.Argument(help="Run folder written by `jat 
 
 @app.command(name="export-web")
 def export_web(
-    run: Annotated[Path, typer.Option(help="Run folder written by `jat eval`.")],
+    run: Annotated[
+        list[str],
+        typer.Option(help="name=folder of a run written by `jat eval`, e.g. pusht=results/pusht."),
+    ],
     wm: Annotated[
         list[str], typer.Option(help="name=folder of a world-model run, e.g. v2=runs/wm-v2.")
     ] = [],  # noqa: B006 (typer reads the default, never mutates it)
@@ -233,11 +457,15 @@ def export_web(
     """Copy results and episode logs into the website data folder."""
     from jat.eval.export import export_web as export
 
-    models = {}
-    for item in wm:
-        name, sep, folder = item.partition("=")
-        if not sep:
-            raise typer.BadParameter(f"expected name=folder, got {item!r}")
-        models[name] = Path(folder)
-    n = export(run, models, out)
-    typer.echo(f"{n} episodes, results and {len(models)} world-model tables -> {out}")
+    def named(items: list[str]) -> dict[str, Path]:
+        folders = {}
+        for item in items:
+            name, sep, folder = item.partition("=")
+            if not sep:
+                raise typer.BadParameter(f"expected name=folder, got {item!r}")
+            folders[name] = Path(folder)
+        return folders
+
+    runs, models = named(run), named(wm)
+    n = export(runs, models, out)
+    typer.echo(f"{n} episodes of {len(runs)} runs, {len(models)} world-model tables -> {out}")

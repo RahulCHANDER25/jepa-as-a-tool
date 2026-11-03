@@ -1,16 +1,17 @@
 import numpy as np
 
-from jat.env.pusht import Push
-from jat.env.tasks import sample_task
 from jat.tool.backends import OracleBackend
 from jat.tool.session import Budget, Session
+from jat.worlds import get_world
+from jat.worlds.base import Push
 
-TASK = sample_task("rotate", seed=0, index=0)
+PUSHT = get_world("pusht")
+TASK = PUSHT.sample_task("rotate", seed=0, index=0)
 A, B = TASK.ref_plan
 
 
 def _session(**budget) -> Session:
-    return Session(TASK, OracleBackend(), simulate_enabled=True, budget=Budget(**budget))
+    return Session(TASK, OracleBackend(PUSHT), simulate_enabled=True, budget=Budget(**budget))
 
 
 def test_simulate_from_imagined_frame_equals_longer_plan():

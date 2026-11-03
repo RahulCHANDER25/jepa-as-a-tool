@@ -1,41 +1,37 @@
-// The PushT table on a canvas. Same T geometry as src/jat/env/geometry.py, so ghosts and real
-// T's line up exactly with what the Python side computed.
+// A world's table on a canvas: goal, real state, imagined ghosts, the pusher. The shapes come
+// from world.ts, so one drawing serves every world.
 
-import type { Point, Pose } from "./episode";
+import { drawScene3d, tablePoint3d } from "./draw3d";
+import { anchor, goalParts, is3D, isBilliards, parts, TABLE, type Point, type State } from "./world";
 
-const TABLE = 512;
-const OUTLINE: Point[] = [
-  [-60, 0], [60, 0], [60, 30], [15, 30], [15, 120], [-15, 120], [-15, 30], [-60, 30],
-];
-const CENTER: Point = [0, 45];
 const PUSHER_RADIUS = 15;
 
-export function toWorld(pose: Pose, [lx, ly]: Point): Point {
-  const [x, y, theta] = pose;
-  const c = Math.cos(theta);
-  const s = Math.sin(theta);
-  return [x + c * lx - s * ly, y + s * lx + c * ly];
-}
-
 export interface Ghost {
-  pose: Pose;
-  truth?: Pose; // where the real physics puts it
+  pose: State;
+  truth?: State; // where the real physics puts it
   label?: string;
   strong?: boolean; // the frame in focus; others are drawn fainter
+  chosen?: boolean; // the imagined plan the agent picked: drawn green
+  alpha?: number; // 0..1, for fading in and out
   push?: { start: Point; end: Point };
 }
 
 export interface Scene {
-  goal: Pose;
-  real: Pose;
+  world: string;
+  goal?: State;
+  real: State;
   ghosts: Ghost[];
   showTruth: boolean;
   showLabels?: boolean;
   pusher?: Point;
   realPush?: { start: Point; end: Point };
+  view?: { x: number; y: number; size: number }; // the square of the table to show (default: all)
 }
 
-type Colors = Record<"table" | "grid" | "real" | "goal" | "ghost" | "truth" | "pusher" | "ink", string>;
+type Colors = Record<
+  "table" | "grid" | "real" | "white" | "red" | "goal" | "ghost" | "chosen" | "truth" | "pusher" | "ink",
+  string
+>;
 
 function colors(canvas: HTMLCanvasElement): Colors {
   const style = getComputedStyle(canvas);
@@ -44,22 +40,15 @@ function colors(canvas: HTMLCanvasElement): Colors {
     table: v("--table"),
     grid: v("--grid"),
     real: v("--t-real"),
+    white: v("--ball-white"),
+    red: v("--ball-red"),
     goal: v("--goal"),
     ghost: v("--ghost"),
+    chosen: v("--chosen"),
     truth: v("--truth"),
     pusher: v("--pusher"),
     ink: v("--text-secondary"),
   };
-}
-
-function tracePolygon(ctx: CanvasRenderingContext2D, pose: Pose) {
-  ctx.beginPath();
-  OUTLINE.forEach((p, i) => {
-    const [x, y] = toWorld(pose, p);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.closePath();
 }
 
 function arrow(ctx: CanvasRenderingContext2D, from: Point, to: Point, color: string, width: number) {
@@ -94,11 +83,22 @@ export function fitCanvas(canvas: HTMLCanvasElement, onResize: () => void) {
   resize();
 }
 
+/** The table point under the pointer (3D worlds: where the ray meets the table). */
+export function tablePoint(canvas: HTMLCanvasElement, world: string, clientX: number, clientY: number): Point | null {
+  if (is3D(world)) return tablePoint3d(canvas, clientX, clientY);
+  const box = canvas.getBoundingClientRect();
+  return [((clientX - box.left) / box.width) * TABLE, ((clientY - box.top) / box.height) * TABLE];
+}
+
+/** A canvas draws one kind of world for its whole life: 2D, or 3D through WebGL. */
 export function drawScene(canvas: HTMLCanvasElement, scene: Scene) {
+  if (is3D(scene.world)) return drawScene3d(canvas, scene);
   const ctx = canvas.getContext("2d")!;
   const c = colors(canvas);
-  const scale = canvas.width / TABLE;
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  const { world } = scene;
+  const view = scene.view ?? { x: 0, y: 0, size: TABLE };
+  const scale = canvas.width / view.size;
+  ctx.setTransform(scale, 0, 0, scale, -view.x * scale, -view.y * scale);
   ctx.fillStyle = c.table;
   ctx.fillRect(0, 0, TABLE, TABLE);
 
@@ -114,45 +114,64 @@ export function drawScene(canvas: HTMLCanvasElement, scene: Scene) {
   }
 
   // goal: soft fill + outline
-  tracePolygon(ctx, scene.goal);
-  ctx.globalAlpha = 0.22;
-  ctx.fillStyle = c.goal;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = c.goal;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([]);
-  ctx.stroke();
+  if (scene.goal) {
+    for (const path of goalParts(world, scene.goal)) {
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = c.goal;
+      ctx.fill(path);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = c.goal;
+      ctx.lineWidth = 2;
+      ctx.stroke(path);
+    }
+  }
 
-  // real T under the ghosts, so ghosts that overlap it stay visible
-  tracePolygon(ctx, scene.real);
-  ctx.fillStyle = c.real;
-  ctx.fill();
+  // real objects under the ghosts, so ghosts that overlap them stay visible
+  const fills = isBilliards(world) ? [c.white, c.red] : [c.real];
+  parts(world, scene.real).forEach((path, i) => {
+    ctx.fillStyle = fills[i];
+    ctx.fill(path);
+    if (isBilliards(world)) {
+      ctx.strokeStyle = c.ink;
+      ctx.lineWidth = 1.5;
+      ctx.stroke(path);
+    }
+  });
 
-  for (const g of scene.ghosts) {
-    if (g.push) arrow(ctx, g.push.start, g.push.end, c.ghost, g.strong ? 2 : 1.25);
-    tracePolygon(ctx, g.pose);
-    ctx.globalAlpha = g.strong ? 0.28 : 0.12;
-    ctx.fillStyle = c.ghost;
-    ctx.fill();
-    ctx.globalAlpha = g.strong ? 1 : 0.6;
-    ctx.strokeStyle = c.ghost;
-    ctx.lineWidth = g.strong ? 2 : 1.25;
-    ctx.stroke();
+  // the chosen plan last, on top of the others
+  const ghosts = [...scene.ghosts.filter((g) => !g.chosen), ...scene.ghosts.filter((g) => g.chosen)];
+  for (const g of ghosts) {
+    const color = g.chosen ? c.chosen : c.ghost;
+    const fade = g.alpha ?? 1;
+    ctx.globalAlpha = fade;
+    if (g.push) arrow(ctx, g.push.start, g.push.end, color, g.chosen ? 3 : g.strong ? 2 : 1.25);
+    for (const path of parts(world, g.pose)) {
+      ctx.globalAlpha = fade * (g.chosen ? 0.4 : g.strong ? 0.28 : 0.12);
+      ctx.fillStyle = color;
+      ctx.fill(path);
+      ctx.globalAlpha = fade * (g.strong || g.chosen ? 1 : 0.6);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = g.chosen ? 3.5 : g.strong ? 2 : 1.25;
+      if (g.chosen) {
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 14;
+      }
+      ctx.stroke(path);
+      ctx.shadowBlur = 0;
+    }
     ctx.globalAlpha = 1;
     if (scene.showTruth && g.truth) {
-      tracePolygon(ctx, g.truth);
       ctx.strokeStyle = c.truth;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([5, 4]);
-      ctx.stroke();
+      for (const path of parts(world, g.truth)) ctx.stroke(path);
       ctx.setLineDash([]);
     }
   }
 
   for (const g of scene.showLabels === false ? [] : scene.ghosts) {
-    if (!g.label) continue;
-    const [x, y] = toWorld(g.pose, CENTER);
+    if (!g.label || (g.alpha ?? 1) < 0.5) continue;
+    const [x, y] = anchor(world, g.pose);
     ctx.font = "600 13px system-ui, -apple-system, 'Segoe UI', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";

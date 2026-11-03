@@ -1,10 +1,7 @@
 // Episode logs as written by `jat eval` (src/jat/agent/episode_log.py), and the steps the
 // player walks through.
 
-import { toWorld } from "./draw";
-
-export type Pose = [number, number, number];
-export type Point = [number, number];
+import { goalText, isBilliards, successText, type Point, type State } from "./world";
 
 export interface Push {
   start: Point;
@@ -14,11 +11,11 @@ export interface Push {
 export interface Frame {
   id: string;
   kind: "real" | "imagined";
-  pose: Pose; // what the LLM was told
-  true_pose: Pose; // real physics on the same branch
+  pose: State; // what the LLM was told
+  true_pose: State; // real physics on the same branch
   parent: string | null;
   push: Push | null;
-  trajectory: number[][]; // real frames: [pusher x, y, T x, y, theta] every 0.1 s
+  trajectory: number[][]; // real frames: [pusher x, y, ...state] every 0.1 s
 }
 
 export interface ToolCall {
@@ -35,7 +32,8 @@ export interface Turn {
 export interface Episode {
   episode_id: string;
   setting: string;
-  task: { id: string; family: string; start: Pose; goal: Pose; max_pushes: number };
+  // `world` is missing from logs written before there were several worlds: PushT
+  task: { id: string; family: string; start: State; goal: State; max_pushes: number; world?: string };
   frames: Frame[];
   turns: Turn[];
   outcome: { success: boolean; position_error: number; angle_error: number };
@@ -45,17 +43,21 @@ export interface Episode {
 export type Step =
   | { kind: "start"; real: string; caption: string }
   | { kind: "imagine"; real: string; from: string; frames: string[]; caption: string; detail: string }
-  | { kind: "act"; real: string; previous: string; caption: string; detail: string }
+  | { kind: "choose"; real: string; chosen: string; candidates: string[]; caption: string; detail: string }
+  | { kind: "act"; real: string; previous: string; chosen?: string; caption: string; detail: string }
   | { kind: "note"; real: string; caption: string; detail: string }
   | { kind: "end"; real: string; caption: string; detail: string };
 
 const BASE = import.meta.env.BASE_URL.replace(/\/?$/, "/");
 
-export async function loadEpisode(id: string): Promise<Episode> {
-  const response = await fetch(`${BASE}data/episodes/${id}.json`);
-  if (!response.ok) throw new Error(`episode ${id}: HTTP ${response.status}`);
+/** `src` is "<run>/<episode id>", as exported by `jat export-web`. */
+export async function loadEpisode(src: string): Promise<Episode> {
+  const response = await fetch(`${BASE}data/episodes/${src}.json`);
+  if (!response.ok) throw new Error(`episode ${src}: HTTP ${response.status}`);
   return response.json();
 }
+
+export const worldOf = (episode: Episode) => episode.task.world ?? "pusht";
 
 export function frameMap(episode: Episode): Map<string, Frame> {
   return new Map(episode.frames.map((f) => [f.id, f]));
@@ -66,18 +68,32 @@ export function pushText(push: Push): string {
   return `(${r(push.start[0])}, ${r(push.start[1])}) → (${r(push.end[0])}, ${r(push.end[1])})`;
 }
 
-/** The goal as the agent was told it (Task.text on the Python side, which the log does not store). */
-export function goalText(goal: Pose): string {
-  const [cx, cy] = toWorld(goal, [0, 45]);
-  const degrees = ((Math.round((goal[2] * 180) / Math.PI) % 360) + 360) % 360;
-  return `Move the T to the green outline: center (${Math.round(cx)}, ${Math.round(cy)}), angle ${degrees}°.`;
+const samePush = (a: Push, b: Push) =>
+  Math.hypot(a.start[0] - b.start[0], a.start[1] - b.start[1]) +
+  Math.hypot(a.end[0] - b.end[0], a.end[1] - b.end[1]);
+
+/** The imagined push from real frame `real` that the real push repeats: the plan the agent
+ * picked. Candidates are every first push it imagined from that frame. */
+export function chosenPlan(
+  episode: Episode,
+  real: string,
+  push: Push,
+): { chosen: string; candidates: string[] } | null {
+  const candidates = episode.frames.filter((f) => f.kind === "imagined" && f.parent === real && f.push);
+  let best: Frame | null = null;
+  for (const f of candidates) {
+    if (samePush(f.push!, push) < (best ? samePush(best.push!, push) : 20)) best = f;
+  }
+  return best ? { chosen: best.id, candidates: candidates.map((f) => f.id) } : null;
 }
 
-/** One step per tool call, in order. The LLM's message rides on its turn's first call. */
+/** One step per tool call, in order. The LLM's message rides on its turn's first call. Before
+ * each real push, a "choose" step shows which imagined plan the push repeats. */
 export function buildSteps(episode: Episode): Step[] {
   const frames = frameMap(episode);
   let real = "R0";
-  const steps: Step[] = [{ kind: "start", real, caption: goalText(episode.task.goal) }];
+  const world = worldOf(episode);
+  const steps: Step[] = [{ kind: "start", real, caption: goalText(world, episode.task.goal) }];
 
   for (const turn of episode.turns) {
     let caption = turn.content.trim();
@@ -101,12 +117,26 @@ export function buildSteps(episode: Episode): Step[] {
       } else if (call.name === "act") {
         const next = call.result.match(/Current real frame: (R\d+)/)?.[1];
         if (next && frames.has(next)) {
+          const push = frames.get(next)!.push!;
+          const pick = chosenPlan(episode, real, push);
+          if (pick) {
+            const n = pick.candidates.length;
+            steps.push({
+              kind: "choose",
+              real,
+              ...pick,
+              caption,
+              detail: `picks ${pick.chosen}, one of ${n} push${n === 1 ? "" : "es"} it imagined from ${real}`,
+            });
+            caption = "";
+          }
           steps.push({
             kind: "act",
             real: next,
             previous: real,
+            chosen: pick?.chosen,
             caption,
-            detail: `real push ${pushText(frames.get(next)!.push!)}`,
+            detail: `real push ${pushText(push)}`,
           });
           real = next;
         } else {
@@ -124,7 +154,7 @@ export function buildSteps(episode: Episode): Step[] {
     kind: "end",
     real,
     caption: o.success ? "Success." : "Not at the goal.",
-    detail: `final error ${Math.round(o.position_error)} px, ${Math.round(o.angle_error)}° (success needs < 20 px and < 15°)`,
+    detail: `final error ${Math.round(o.position_error)} px${isBilliards(world) ? "" : `, ${Math.round(o.angle_error)}°`} (${successText(world)})`,
   });
   return steps;
 }

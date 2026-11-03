@@ -1,0 +1,79 @@
+---
+// Dream mode: push the T (or strike a ball) yourself, the V-JEPA 2 world model imagines the
+// result in your browser. Without any bundle the figure is left out. A world appears once `jat export-dream` wrote its bundle into
+// web/public/dream/<world>. The default slot is the caption.
+import { hasDream, WORLD_NAMES } from "../lib/data";
+
+interface Props {
+  worlds?: string[];
+}
+const { worlds = ["pusht", "tabletop", "billiards"] } = Astro.props;
+const ready = worlds.filter(hasDream);
+---
+
+{ready.length > 0 && (
+<figure class="dream" data-dream data-worlds={ready.join(",")}>
+  {
+    ready.length > 1 && (
+      <div class="tab-row" role="group" aria-label="World">
+        {ready.map((w, i) => (
+          <button type="button" data-world={w} aria-pressed={i === 0 ? "true" : "false"}>
+            {WORLD_NAMES[w] ?? w}
+          </button>
+        ))}
+      </div>
+    )
+  }
+  <div class="stage">
+    <canvas role="img" aria-label="A table: drag on it to push; the world model draws what it imagines"></canvas>
+    <button type="button" class="wake" data-wake>Wake the world model (20 MB)</button>
+  </div>
+  <p class="caption" data-status aria-live="polite">
+    Wake it, then drag on the table to push. Runs in your browser; nothing is sent anywhere.
+  </p>
+  <div class="controls">
+    <button type="button" data-example>▶ Show me a push</button>
+    <button type="button" data-back>↺ Back to the start</button>
+    <button type="button" data-next>Next start ›</button>
+  </div>
+  {Astro.slots.has("default") && <figcaption class="numbered"><slot /></figcaption>}
+</figure>
+)}
+
+<style>
+  .dream {
+    max-width: 520px;
+    margin: 1.5rem auto;
+  }
+  .dream canvas {
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .dream .wake {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: max-content;
+    height: max-content;
+    padding: 12px 20px;
+    font-size: 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+  }
+  .dream.awake .wake {
+    display: none;
+  }
+  .dream .controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+</style>
+
+<script>
+  import { mountDreams } from "../lib/dream";
+  mountDreams();
+</script>

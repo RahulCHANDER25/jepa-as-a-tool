@@ -1,4 +1,5 @@
-// Line chart drawn at the container's real width, so text stays readable on phones.
+// Line chart drawn at the container's real width, so text stays readable on phones. One chart
+// per world; the newest model (`data-main`) is the story, older ones are drawn gray.
 
 import { hideTip, showTip } from "./tooltip";
 
@@ -14,7 +15,7 @@ interface Model {
 }
 
 const SVG = "http://www.w3.org/2000/svg";
-const HEIGHT = 280;
+const HEIGHT = 220;
 const M = { top: 16, right: 44, bottom: 40, left: 44 };
 
 function el<K extends keyof SVGElementTagNameMap>(name: K, attrs: Record<string, string | number>, parent: Element) {
@@ -24,7 +25,7 @@ function el<K extends keyof SVGElementTagNameMap>(name: K, attrs: Record<string,
   return node;
 }
 
-function draw(box: HTMLElement, models: Model[]) {
+function draw(box: HTMLElement, models: Model[], main: string) {
   const width = box.clientWidth;
   if (!width) return;
   const maxH = Math.max(...models.flatMap((m) => m.rows.map((r) => r.horizon)));
@@ -45,13 +46,11 @@ function draw(box: HTMLElement, models: Model[]) {
     "imagined pushes in a row";
 
   const cross = el("line", { y1: M.top, y2: HEIGHT - M.bottom, class: "crosshair", visibility: "hidden" }, svg);
-  models.forEach((m, i) => {
-    const cls = i === models.length - 1 ? "s-main" : "s-other"; // the newest model is the story
+  models.forEach((m) => {
+    const cls = m.name === main ? "s-main" : "s-other";
     const d = m.rows.map((r, j) => `${j ? "L" : "M"}${x(r.horizon)},${y(r.within_tolerance)}`).join("");
     el("path", { d, class: `line ${cls}` }, svg);
     for (const r of m.rows) el("circle", { cx: x(r.horizon), cy: y(r.within_tolerance), r: 4, class: `dot ${cls}` }, svg);
-    const last = m.rows[m.rows.length - 1];
-    el("text", { x: x(last.horizon) + 8, y: y(last.within_tolerance), class: "end-label", "dominant-baseline": "middle" }, svg).textContent = m.name;
   });
 
   // hover: snap to the nearest horizon
@@ -77,10 +76,9 @@ function draw(box: HTMLElement, models: Model[]) {
 }
 
 export function mountHorizonCharts() {
-  for (const fig of document.querySelectorAll<HTMLElement>("[data-horizon]:not([data-mounted])")) {
-    fig.dataset.mounted = "1";
-    const models: Model[] = JSON.parse(fig.dataset.horizon!);
-    const box = fig.querySelector<HTMLElement>(".horizon-chart")!;
-    new ResizeObserver(() => draw(box, models)).observe(box);
+  for (const box of document.querySelectorAll<HTMLElement>("[data-horizon]:not([data-mounted])")) {
+    box.dataset.mounted = "1";
+    const models: Model[] = JSON.parse(box.dataset.horizon!);
+    new ResizeObserver(() => draw(box, models, box.dataset.main!)).observe(box);
   }
 }

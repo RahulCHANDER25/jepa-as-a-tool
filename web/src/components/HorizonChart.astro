@@ -1,42 +1,79 @@
 ---
-// World-model accuracy vs number of imagined pushes in a row, one line per model version.
-import horizon from "../../public/data/horizon.json";
+// World-model accuracy vs number of imagined pushes in a row: one panel per world, one line per
+// model version. Worlds without a table are left out. The default slot is the caption.
+import { horizonModels, WORLD_NAMES } from "../lib/data";
+
+interface Props {
+  worlds?: string[];
+  maxPushes?: number;
+}
+const { worlds = ["pusht", "tabletop", "billiards", "tabletop-new-look"], maxPushes = 4 } = Astro.props;
+const panels = worlds
+  .map((world) => ({
+    world,
+    title: WORLD_NAMES[world] ?? world,
+    models: horizonModels(world).map((m) => ({ ...m, rows: m.rows.filter((r) => r.horizon <= maxPushes) })),
+  }))
+  .filter((p) => p.models.length > 0);
+const names = [...new Set(panels.flatMap((p) => p.models.map((m) => m.name)))];
 ---
 
-<figure class="horizon wide" data-horizon={JSON.stringify(horizon.models)}>
-  <ul class="legend">
+<figure class="horizon wide">
+  {
+    names.length > 1 && (
+      <ul class="legend">
+        {names.map((name, i) => (
+          <li>
+            <i class={i === names.length - 1 ? "k-line s-main" : "k-line s-other"} />
+            world model {name}
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  <div class="horizon-panels">
     {
-      horizon.models.map((m, i) => (
-        <li>
-          <i class={i === horizon.models.length - 1 ? "k-line s-main" : "k-line s-other"} />
-          world model {m.name}
-        </li>
+      panels.map((p) => (
+        <section aria-label={p.title}>
+          <h4>{p.title}</h4>
+          <div
+            class="horizon-chart"
+            data-horizon={JSON.stringify(p.models)}
+            data-main={names[names.length - 1]}
+            role="img"
+            aria-label={`${p.title}: share of accurate predictions vs imagined pushes in a row`}
+          />
+        </section>
       ))
     }
-  </ul>
-  <div class="horizon-chart" role="img" aria-label="Share of accurate predictions vs imagined pushes in a row"></div>
-  <figcaption>
-    Share of imagined poses within 20 px and 15° of where the real physics puts the T, after 0 to
-    {Math.max(...horizon.models.flatMap((m) => m.rows.map((r) => r.horizon)))} imagined pushes in a row.
-    Test episodes the model never trained on.
+  </div>
+  <figcaption class="numbered">
+    <slot>
+      Share of imagined states within 20 px (and 15° for the T) of where the real physics puts
+      them, after 0 to {maxPushes} imagined pushes in a row. At 0 the translator reads a real frame.
+      Test episodes the models never trained on.
+    </slot>
   </figcaption>
   <details class="table-view">
     <summary>Show as a table</summary>
     <table>
       <thead>
-        <tr><th>Model</th><th>Imagined pushes</th><th>Accurate</th><th>Median error</th></tr>
+        <tr><th>World</th><th>Model</th><th>Imagined pushes</th><th>Accurate</th><th>Median error</th></tr>
       </thead>
       <tbody>
         {
-          horizon.models.flatMap((m) =>
-            m.rows.map((r) => (
-              <tr>
-                <td>{m.name}</td>
-                <td>{r.horizon}</td>
-                <td>{Math.round(r.within_tolerance * 100)}%</td>
-                <td>{r.px_median.toFixed(1)} px, {r.deg_median.toFixed(1)}°</td>
-              </tr>
-            )),
+          panels.flatMap((p) =>
+            p.models.flatMap((m) =>
+              m.rows.map((r) => (
+                <tr>
+                  <td>{p.title}</td>
+                  <td>{m.name}</td>
+                  <td>{r.horizon}</td>
+                  <td>{Math.round(r.within_tolerance * 100)}%</td>
+                  <td>{r.px_median.toFixed(1)} px{p.world === "billiards" ? "" : `, ${r.deg_median.toFixed(1)}°`}</td>
+                </tr>
+              )),
+            ),
           )
         }
       </tbody>

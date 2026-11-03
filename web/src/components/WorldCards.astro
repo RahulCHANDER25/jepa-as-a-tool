@@ -1,0 +1,55 @@
+---
+// One card per world: its 3D clip (web/public/clips/<world>.mp4, from `jat clip`) when rendered,
+// else a small replay of one episode. Runs that were not exported are left out.
+import EpisodePlayer from "./EpisodePlayer.astro";
+import { hasClip, hasRun, run as runOf, WORLD_NAMES } from "../lib/data";
+
+interface Props {
+  episodes: { run: string; id: string }[];
+}
+
+const ABOUT: Record<string, { text: string; seen: boolean }> = {
+  pusht: { text: "gym-pusht: push a T onto a goal outline. Flat 2D physics, seen from above.", seen: true },
+  tabletop: {
+    text: "The same T on a MuJoCo table with real friction: it slides on after the pusher leaves. The camera looks down at an angle.",
+    seen: true,
+  },
+  billiards: {
+    text: "A white and a red ball on the same table. One cue stroke per move; balls roll, collide and bounce off the cushions.",
+    seen: true,
+  },
+  "tabletop-new-look": {
+    text: "The tabletop with another table, light, T color and camera position. Never seen in training.",
+    seen: false,
+  },
+};
+
+const BASE = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+const cards = Astro.props.episodes
+  .filter((e) => hasRun(e.run))
+  .map((e) => {
+    const world = runOf(e.run).world;
+    return { ...e, world, title: WORLD_NAMES[world] ?? world, about: ABOUT[world], clip: hasClip(world) };
+  });
+---
+
+<figure class="world-cards wide">
+  <div class="cards">
+    {
+      cards.map((c) => (
+        <section class="card">
+          {c.clip ? (
+            <video src={`${BASE}clips/${c.world}.mp4`} autoplay muted loop playsinline aria-label={`${c.title}: an episode in 3D`} />
+          ) : (
+            <EpisodePlayer run={c.run} episode={c.id} compact autoplay />
+          )}
+          <h4>
+            {c.title} <span class:list={["tag", { unseen: !c.about?.seen }]}>{c.about?.seen ? "trained on" : "test only"}</span>
+          </h4>
+          <p>{c.about?.text}</p>
+        </section>
+      ))
+    }
+  </div>
+  {Astro.slots.has("default") && <figcaption class="numbered"><slot /></figcaption>}
+</figure>

@@ -1,0 +1,31 @@
+---
+// One number from the exported results, inline in the text, e.g.
+// <Stat run="pusht" setting="wm_tool" family="rotate" />. Paired values compare with the LLM alone.
+import { pairedRow, pct, pText, row } from "../lib/data";
+
+interface Props {
+  run: string;
+  setting: string;
+  family?: string;
+  value?: "success" | "n" | "imagined" | "pushes" | "tokens" | "won" | "lost" | "p";
+}
+const { run, setting, family = "all", value = "success" } = Astro.props;
+const where = `${run} / ${family} / ${setting}`;
+
+function text(): string {
+  if (value === "won" || value === "lost" || value === "p") {
+    const r = pairedRow(run, setting, family);
+    if (!r) throw new Error(`no paired row for ${where}`);
+    return value === "p" ? pText(r.p_value) : String(value === "won" ? r.only_setting : r.only_baseline);
+  }
+  const r = row(run, setting, family);
+  if (!r) throw new Error(`no results row for ${where}`);
+  if (value === "success") return pct(r.success_rate);
+  if (value === "n") return String(r.n);
+  if (value === "imagined") return String(Math.round(r.imagined_pushes));
+  if (value === "pushes") return r.real_pushes.toFixed(1);
+  return `${Math.round(r.tokens / 1000)}k`;
+}
+---
+
+<strong class="stat">{text()}</strong>

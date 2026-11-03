@@ -13,4 +13,7 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      # No GPU and no display: MuJoCo physics only; the render tests skip themselves.
       - run: uv run pytest
+        env:
+          MUJOCO_GL: disable

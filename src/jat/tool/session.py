@@ -8,11 +8,10 @@ import numpy as np
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, ValidationError
 
-from jat.env import geometry as geo
-from jat.env.pusht import Push, World, check_push
-from jat.env.tasks import Task
 from jat.tool.backends import Backend
 from jat.tool.frames import FrameStore, UnknownFrame
+from jat.worlds import get_world
+from jat.worlds.base import Push, Task
 
 
 @dataclass(frozen=True)
@@ -49,13 +48,14 @@ class Session:
         self.backend = backend
         self.simulate_enabled = simulate_enabled
         self.budget = budget
-        self.world = World(task.start)
+        self.world = get_world(task.world)
+        self.state = np.array(task.start)  # the real table
         self.frames = FrameStore()
         self.pushes_used = 0
         self.imagined_left = budget.imagined_per_push
         self.stop_reason: str | None = None
-        state = backend.observe(self.world)
-        self.frames.add_real(state, backend.read([state])[0], true_pose=self.world.pose())
+        observed = backend.observe(self.state)
+        self.frames.add_real(observed, backend.read([observed])[0], true_pose=self.state)
 
     @property
     def finished(self) -> bool:
@@ -72,7 +72,7 @@ class Session:
     def observation(self) -> str:
         frame = self.frames.get(self.frames.current)
         return (
-            f"Current real frame: {frame.id}\n{geo.pose_text(frame.pose, self.goal)}\n"
+            f"Current real frame: {frame.id}\n{self.world.state_text(frame.pose, self.goal)}\n"
             f"Real pushes left: {self.pushes_left}."
         )
 
@@ -106,7 +106,7 @@ class Session:
                 if not alive[i] or k >= len(plan):
                     continue
                 parent = self.frames.get(heads[i])
-                error = check_push(parent.pose, plan[k])
+                error = self.world.check_push(parent.pose, plan[k])
                 if error is None:
                     runnable.append(i)
                 else:
@@ -128,11 +128,11 @@ class Session:
                 self.imagined_left -= 1
                 note = (
                     ""
-                    if geo.moved(parent.pose, pose)
-                    else "  (the T does not move: the push misses it)"
+                    if self.world.moved(parent.pose, pose)
+                    else f"  ({self.world.tool_text.misses})"
                 )
                 lines[i].append(f"  {frame_id} = {parent.id} + push {push.text()}{note}")
-                lines[i].append(indent(geo.pose_text(pose, self.goal), "    "))
+                lines[i].append(indent(self.world.state_text(pose, self.goal), "    "))
 
         footer = f"{self.imagined_left} imagined pushes left before your next real push."
         return "\n".join("\n".join(block) for block in lines) + "\n" + footer
@@ -140,15 +140,16 @@ class Session:
     def act(self, push: Push) -> str:
         if self.finished:
             return "The episode is over."
-        result = self.world.push(push)
+        result = self.world.push(self.state, push)
         if not result.valid:
             return f"Push rejected: {result.error}. Nothing happened and no push was used."
-        state = self.backend.observe(self.world)
-        pose = self.backend.read([state])[0]
+        self.state = np.array(result.state)
+        observed = self.backend.observe(self.state)
+        pose = self.backend.read([observed])[0]
         frame_id = self.frames.add_real(
-            state,
+            observed,
             pose,
-            true_pose=self.world.pose(),
+            true_pose=self.state,
             parent=self.frames.current,
             push=push,
             trajectory=result.trajectory,
@@ -156,9 +157,9 @@ class Session:
         self.pushes_used += 1
         self.imagined_left = self.budget.imagined_per_push
         lines = [f"Pushed {push.text()} on the real table.", f"Current real frame: {frame_id}"]
-        lines.append(geo.pose_text(pose, self.goal))
+        lines.append(self.world.state_text(pose, self.goal))
         if not result.moved:
-            lines.append("The T did not move: the push missed it.")
+            lines.append(self.world.tool_text.missed)
         if result.jammed:
             lines.append("The T got pinned against a wall, so the push stopped early.")
         if self.pushes_left == 0:
@@ -181,7 +182,8 @@ class Session:
                     func=self.simulate,
                     name="simulate",
                     description=(
-                        "Imagine pushes without touching the real table. Predicts where the T ends up "
+                        "Imagine pushes without touching the real table. Predicts "
+                        f"{self.world.tool_text.ends_up} "
                         "after each push of each plan, starting from `from_frame`. Each predicted step "
                         "gets a new frame id (I1, I2, ...) that a later call can start from. "
                         f"Up to {b.plans_per_call} plans of up to {b.pushes_per_plan} pushes per call; "
@@ -204,7 +206,7 @@ class Session:
             StructuredTool.from_function(
                 func=self.done,
                 name="done",
-                description="End the episode now. Call it when the T is at the goal.",
+                description=f"End the episode now. Call it when {self.world.tool_text.at_goal}.",
             )
         )
         return tools
