@@ -224,6 +224,27 @@ function arrow(from: Point, to: Point, color: string, width: number, opacity = 1
   return group;
 }
 
+/** A bright ring on the table around a ball. */
+function ring(x: number, z: number, color: string, opacity: number): THREE.Object3D {
+  const mesh = new THREE.Mesh(
+    new THREE.RingGeometry(BALL_RADIUS + 1, BALL_RADIUS + 8, 48),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false }),
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, 1.2, z);
+  return mesh;
+}
+
+/** A dashed path on the table from a real ball to where it is imagined. */
+function trail(from: Point, to: Point, color: string, opacity: number): THREE.Object3D {
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(from[0], 1.3, from[1]), new THREE.Vector3(to[0], 1.3, to[1])]),
+    new THREE.LineDashedMaterial({ color, dashSize: 10, gapSize: 7, transparent: true, opacity: 0.9 * opacity }),
+  );
+  line.computeLineDistances();
+  return line;
+}
+
 function clear(group: THREE.Group) {
   group.traverse((o) => {
     if (o instanceof THREE.Mesh || o instanceof THREE.Line) {
@@ -275,6 +296,22 @@ export function drawScene3d(canvas: HTMLCanvasElement, scene: Scene) {
     const fade = g.alpha ?? 1;
     const color = g.chosen ? c.chosen : c.ghost;
     if (g.push) add(arrow(g.push.start, g.push.end, color, g.chosen ? 5 : 3, fade * (g.chosen || g.strong ? 0.9 : 0.5)));
+    if (balls) {
+      // each imagined ball keeps its own color, so white and red stay apart; a ring on the
+      // table says imagined (or kept), and a trail joins it to where the real ball is
+      const opacity = fade * (g.chosen || g.strong ? 0.75 : 0.35);
+      [c.white, c.red].forEach((own, i) => {
+        const from: Point = [scene.real[2 * i], scene.real[2 * i + 1]];
+        const to: Point = [g.pose[2 * i], g.pose[2 * i + 1]];
+        const moved = Math.hypot(to[0] - from[0], to[1] - from[1]);
+        if (moved < 6) return; // a ball that stays put is the real one: no ghost on top of it
+        const material = new THREE.MeshStandardMaterial({ color: own, transparent: true, opacity, depthWrite: false, roughness: 0.4 });
+        add(...place(view!, g.pose, material, lift, i), ring(g.pose[2 * i], g.pose[2 * i + 1], color, fade));
+        if (moved > BALL_RADIUS) add(trail(from, to, own === c.white ? "#f4f2ea" : own, fade));
+      });
+      lift += 0.4;
+      continue;
+    }
     layer(g.pose, color, fade * (g.chosen ? 0.5 : g.strong ? 0.35 : 0.15), fade * (g.strong || g.chosen ? 1 : 0.5));
     if (scene.showTruth && g.truth) add(...outline(view, g.truth, c.truth, lift));
   }
