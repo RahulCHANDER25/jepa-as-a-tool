@@ -5,12 +5,14 @@ import { onThemeChange } from "./theme";
 import { buildSteps, frameMap, loadEpisode, worldOf, type Step } from "./episode";
 import type { Point, State } from "./world";
 
-const STEP_MS = 2400; // pause on a step while playing
-const ROW_MS = 110; // one trajectory row = 0.1 s of physics, shown slightly slower
-const LOOP_PAUSE_MS = 3500;
-const FAN_MS = 1400; // imagined frames appear one by one over this time
-const CHOOSE_MS = 700; // the other plans fade, the chosen one turns green
-const TYPE_MS = 18; // per character of the agent's sentence
+const STEP_MS = 700; // pause on a step while playing, plus reading time for the agent's words
+const READ_MS = 9; // per character of the agent's sentence, up to READ_MAX_MS
+const READ_MAX_MS = 1800;
+const ROW_MS = 50; // one trajectory row = 0.1 s of physics, played at 2x
+const LOOP_PAUSE_MS = 2500;
+const FAN_MS = 900; // imagined frames appear one by one over this time
+const CHOOSE_MS = 600; // the other plans fade, the chosen one turns green
+const TYPE_MS = 8; // per character of the agent's sentence
 const BADGES: Record<Step["kind"], string> = {
   start: "Task",
   imagine: "Imagine",
@@ -54,6 +56,7 @@ async function mount(root: HTMLElement) {
   let animation = 0;
   let lastScene: Scene | null = null;
   let typer = 0;
+  let paused = false; // by the reader: scrolling back into view does not restart it
 
   const truePose = (id: string) => frames.get(id)!.true_pose;
 
@@ -70,7 +73,7 @@ async function mount(root: HTMLElement) {
       real,
       ghosts: [],
       showTruth: truth?.checked ?? !compact, // small players stay readable: ghosts only
-      showLabels: !compact,
+      showLabels: !compact && step.kind === "choose", // names only when the text names the pick
     };
     if (step.kind === "imagine") {
       // an imagined starting frame is shown faint, under the new ones
@@ -124,9 +127,14 @@ async function mount(root: HTMLElement) {
 
   function render(final: boolean) {
     const step = steps[index];
-    caption.textContent = compact || step.kind === "start" || step.kind === "end"
+    const text = compact || step.kind === "start" || step.kind === "end"
       ? [step.caption, step.detail].filter(Boolean).join(" ")
       : step.detail;
+    // what is happening, in one word, then the details
+    const badge = document.createElement("span");
+    badge.className = `badge step-${step.kind}`;
+    badge.textContent = BADGES[step.kind];
+    caption.replaceChildren(...(compact ? [] : [badge, " "]), text);
     if (slider) slider.value = String(index);
     if (counter) counter.textContent = `${index + 1} / ${steps.length}`;
     transcript?.querySelectorAll("li").forEach((li, i) => {
@@ -204,7 +212,8 @@ async function mount(root: HTMLElement) {
   function scheduleNext() {
     if (!playing) return;
     if (index < steps.length - 1) {
-      timer = window.setTimeout(() => go(index + 1, true), STEP_MS);
+      const reading = Math.min(READ_MAX_MS, steps[index].caption.length * READ_MS);
+      timer = window.setTimeout(() => go(index + 1, true), STEP_MS + reading);
     } else if (loop) {
       timer = window.setTimeout(() => go(0, true), LOOP_PAUSE_MS);
     } else {
@@ -241,7 +250,11 @@ async function mount(root: HTMLElement) {
         li.append(p);
       }
       li.tabIndex = 0;
-      li.addEventListener("click", () => go(i, true));
+      li.addEventListener("click", () => {
+        paused = true;
+        setPlaying(false);
+        go(i, true);
+      });
       li.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -254,19 +267,25 @@ async function mount(root: HTMLElement) {
   if (slider) {
     slider.max = String(steps.length - 1);
     slider.addEventListener("input", () => {
+      paused = true;
       setPlaying(false);
       go(Number(slider.value), false);
     });
   }
   $("[data-prev]")?.addEventListener("click", () => {
+    paused = true;
     setPlaying(false);
     go(index - 1, false);
   });
   $("[data-next]")?.addEventListener("click", () => {
+    paused = true;
     setPlaying(false);
     go(index + 1, true);
   });
-  playButton.addEventListener("click", () => setPlaying(!playing));
+  playButton.addEventListener("click", () => {
+    paused = playing;
+    setPlaying(!playing);
+  });
   truth?.addEventListener("change", () => lastScene && draw({ ...lastScene, showTruth: truth.checked }));
 
   fitCanvas(canvas, () => (lastScene ? draw(lastScene) : render(true)));
@@ -275,6 +294,6 @@ async function mount(root: HTMLElement) {
 
   if (loop && !reduceMotion) {
     // only play while visible
-    new IntersectionObserver(([entry]) => setPlaying(entry.isIntersecting), { threshold: 0.4 }).observe(root);
+    new IntersectionObserver(([entry]) => !paused && setPlaying(entry.isIntersecting), { threshold: 0.4 }).observe(root);
   }
 }

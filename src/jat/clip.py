@@ -1,5 +1,6 @@
-"""A logged episode as a video (MuJoCo in 3D, drawn from above in 2D): what the agent thinks, the plans it imagines
-(see-through ghosts), the one it picks (green), then the real push.
+"""A logged episode as a video (MuJoCo in 3D, drawn from above in 2D): the plans the agent
+imagines (see-through ghosts), the one it picks (green), then the real push. What the agent
+says goes next to the video as WebVTT subtitles, so the site sets it in real type.
 
     jat clip results/tabletop/episodes/rotate-0-003__wm_tool__s0.json --out clip.mp4
 
@@ -8,7 +9,6 @@ The goal is gold, imagined states lavender, the chosen plan green. H.264 through
 
 import shutil
 import subprocess
-import textwrap
 from pathlib import Path
 
 import cv2
@@ -27,14 +27,15 @@ FPS = 30
 # The world's camera (45°) crops the table's edge in the new room; clips are for people, so they
 # see the whole table. The world model only ever sees the world's own camera.
 CLIP_FOVY = 54
-CAPTION_LINES = 3
 SHADOW_SIZE = 8192  # MuJoCo's 2048 draws the rim's shadow as a saw-tooth
 # Ghosts lie where the real objects are: each slot sits a bit higher, so overlapping surfaces
 # stack in a fixed order instead of flickering through each other (z-fighting)
 GHOST_LIFT = 0.0006  # m per slot
-CAPTION_HEIGHT = 14 + 22 * CAPTION_LINES  # a band above the picture, the same in every frame
-ASCII = str.maketrans({"\u2019": "'", "\u2018": "'", "\u201c": '"', "\u201d": '"', "\u2014": "-",
-                       "\u2013": "-", "\u2192": "->", "\u00b0": " deg"})  # fmt: skip
+# Seconds on screen. The real push plays at 2x: the physics is slow next to the thinking.
+START, FAN, CHOOSE, SETTLE, END = 0.8, 1.0, 0.7, 0.5, 2.0
+PUSH_ROW = 0.05  # one trajectory row is 0.1 s of physics
+CRF = 18  # libx264 quality: lower is sharper
+BITRATE = "8M"  # the same for OpenH264, which only takes a bitrate
 
 
 def chosen_plan(log: EpisodeLog, real: str, push) -> tuple[str | None, list[FrameLog]]:
@@ -51,24 +52,31 @@ def chosen_plan(log: EpisodeLog, real: str, push) -> tuple[str | None, list[Fram
 
 
 class Reel:
-    """Frames of a clip and the words shown above them."""
+    """Frames of a clip, and the words the agent says while they play."""
 
     def __init__(self):
         self.frames: list[np.ndarray] = []
         self.text = ""
+        self.cues: list[list] = []  # [first frame, end frame, text]
 
-    def _caption(self, frame: np.ndarray) -> np.ndarray:
-        """The agent's words in a band above the picture, so they never hide the table."""
-        band = np.full((CAPTION_HEIGHT, frame.shape[1], 3), 245, np.uint8)
-        # OpenCV's Hershey font is ASCII only: curly quotes would print as "???"
-        text = self.text.translate(ASCII).encode("ascii", "ignore").decode()
-        lines = textwrap.wrap(text, width=frame.shape[1] // 10 - 3)  # room for " ..."
-        if len(lines) > CAPTION_LINES:
-            lines = [*lines[: CAPTION_LINES - 1], lines[CAPTION_LINES - 1] + " ..."]
-        for i, line in enumerate(lines):
-            cv2.putText(band, line, (12, 28 + 22 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
-                        (30, 30, 30), 1, cv2.LINE_AA)  # fmt: skip
-        return np.vstack([band, frame])
+    def _add(self, frame: np.ndarray, seconds: float) -> None:
+        n = max(1, round(seconds * FPS))
+        last = self.cues[-1] if self.cues else None
+        if last and last[2] == self.text and last[1] == len(self.frames):
+            last[1] += n
+        else:
+            self.cues.append([len(self.frames), len(self.frames) + n, self.text])
+        self.frames += [frame] * n
+
+    def subtitles(self) -> str:
+        """The words as WebVTT, one cue per stretch of the same sentence."""
+
+        def stamp(frame: int) -> str:
+            ms = round(frame * 1000 / FPS)
+            return f"{ms // 3_600_000:02d}:{ms // 60_000 % 60:02d}:{ms // 1000 % 60:02d}.{ms % 1000:03d}"
+
+        cues = [f"{stamp(a)} --> {stamp(b)}\n{text}" for a, b, text in self.cues if text.strip()]
+        return "WEBVTT\n\n" + "\n\n".join(cues) + "\n"
 
 
 class Film(Reel):
@@ -80,6 +88,8 @@ class Film(Reel):
         self.model = self.scene.model
         self.model.cam_fovy[:] = CLIP_FOVY
         self.model.vis.quality.shadowsize = SHADOW_SIZE  # read when the renderer is made
+        self.model.vis.global_.offwidth = max(self.model.vis.global_.offwidth, size)
+        self.model.vis.global_.offheight = max(self.model.vis.global_.offheight, size)
         self.data = mujoco.MjData(self.model)
         self.renderer = mujoco.Renderer(self.model, size, size)
         self.n_objects = len(world.poses(world.random_start(np.random.default_rng(0))))
@@ -120,8 +130,7 @@ class Film(Reel):
                     data.mocap_pos[mocap] = (0, 0, -1)
         self.mj.mj_forward(self.model, data)
         self.renderer.update_scene(data, camera="main")
-        frame = self._caption(self.renderer.render().copy())
-        self.frames += [frame] * max(1, round(seconds * FPS))
+        self._add(self.renderer.render().copy(), seconds)
 
 
 class Flat(Reel):
@@ -167,7 +176,7 @@ class Flat(Reel):
             cv2.circle(image, center, max(4, n // 40), (255, 255, 255), -1, cv2.LINE_AA)
             cv2.circle(image, center, max(4, n // 40), self.EDGE, 2, cv2.LINE_AA)
         cv2.rectangle(image, (0, 0), (n - 1, n - 1), self.EDGE, 2)
-        self.frames += [self._caption(image)] * max(1, round(seconds * FPS))
+        self._add(image, seconds)
 
 
 def _last_thought_before_each_push(log: EpisodeLog) -> dict[str, str]:
@@ -184,6 +193,7 @@ def _last_thought_before_each_push(log: EpisodeLog) -> dict[str, str]:
 
 
 def render_clip(log: EpisodeLog, out: Path, size: int = 512) -> Path:
+    """Writes `out` (the video) and the agent's words next to it (`out` with .vtt)."""
     world = get_world(log.task.world)
     film = Film(world, size) if hasattr(world, "clip_scene") else Flat(world, size)
     frames = {f.id: f for f in log.frames}
@@ -192,7 +202,7 @@ def render_clip(log: EpisodeLog, out: Path, size: int = 512) -> Path:
     said = _last_thought_before_each_push(log)
     real = "R0"
     film.text = thoughts[0] if thoughts else ""
-    film.shot(frames[real].true_pose, goal=goal, seconds=1.0)
+    film.shot(frames[real].true_pose, goal=goal, seconds=START)
 
     for frame in log.frames:
         if frame.kind != "real" or frame.parent is None:
@@ -203,22 +213,23 @@ def render_clip(log: EpisodeLog, out: Path, size: int = 512) -> Path:
         shown = sorted(candidates, key=lambda f: f.id != chosen)[: SLOTS - 1]
         for n in range(1, len(shown) + 1):  # the plans fan in
             ghosts = [(f.pose, GHOST) for f in shown[:n]]
-            film.shot(before.true_pose, ghosts, goal, seconds=1.2 / len(shown))
+            film.shot(before.true_pose, ghosts, goal, seconds=FAN / len(shown))
         if chosen is not None:  # the chosen one turns green, the others fade
             ghosts = [(f.pose, CHOSEN if f.id == chosen else (*GHOST[:3], 0.1)) for f in shown]
-            film.shot(before.true_pose, ghosts, goal, seconds=0.9)
+            film.shot(before.true_pose, ghosts, goal, seconds=CHOOSE)
         keep = [(frames[chosen].pose, CHOSEN)] if chosen else []
         rows = frame.trajectory or [[*frame.push.end, *frame.true_pose]]
-        for row in rows:  # the real push, 0.1 s per row, played at 1x
-            film.shot(row[2:], keep, goal, pusher=row[:2], seconds=0.1)
-        film.shot(frame.true_pose, keep, goal, seconds=0.6)
+        for row in rows:  # the real push
+            film.shot(row[2:], keep, goal, pusher=row[:2], seconds=PUSH_ROW)
+        film.shot(frame.true_pose, keep, goal, seconds=SETTLE)
         real = frame.id
 
     film.text = (
         f"{'Success' if log.outcome.success else 'Not at the goal'}: "
         f"{log.outcome.position_error:.0f} px from the goal."
     )
-    film.shot(frames[real].true_pose, goal=goal, seconds=1.5)
+    film.shot(frames[real].true_pose, goal=goal, seconds=END)
+    out.with_suffix(".vtt").write_text(film.subtitles())
     return write_video(film.frames, out)
 
 
@@ -241,10 +252,12 @@ def write_video(frames: list[np.ndarray], out: Path) -> Path:
             writer.write(cv2.cvtColor(f, cv2.COLOR_RGB2BGR))
         writer.release()
         return out
+    # OpenH264 has no quality target, only a bitrate
+    quality = ["-crf", str(CRF), "-preset", "slow"] if encoder == "libx264" else ["-b:v", BITRATE]
     cmd = [
         "ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
         "-s", f"{w}x{h}", "-r", str(FPS), "-i", "-", "-c:v", encoder, "-pix_fmt", "yuv420p",
-        "-b:v", "2M", str(out),
+        *quality, "-movflags", "+faststart", str(out),
     ]  # fmt: skip
     subprocess.run(cmd, input=b"".join(f.tobytes() for f in frames), check=True)
     return out

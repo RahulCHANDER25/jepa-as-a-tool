@@ -1,0 +1,13 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:00.800
+I'll test several push directions to find the best way to move the T toward the goal.
+
+00:00:00.800 --> 00:00:03.033
+That start position overlapped the T, so I'll shift the start clear and try again.
+
+00:00:03.033 --> 00:00:05.933
+I found a push predicted to land within the goal tolerance — I'll fine-tune it before executing.
+
+00:00:05.933 --> 00:00:07.933
+Success: 10 px from the goal.

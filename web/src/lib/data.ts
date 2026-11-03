@@ -79,6 +79,9 @@ export const hasDream = (world: string) => exists(`dream/${world}/dream.json`);
 /** A 3D clip (`jat clip`) of a world, if one was rendered into web/public/clips. */
 export const hasClip = (world: string) => exists(`clips/${world}.mp4`);
 
+/** The agent's words for a clip, as subtitles (`jat clip` writes them next to the video). */
+export const hasWords = (name: string) => exists(`clips/${name}.vtt`);
+
 export const pct = (v: number) => `${Math.round(v * 100)}%`;
 
 /** A p-value the way the text prints it. */

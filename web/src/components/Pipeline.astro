@@ -92,14 +92,32 @@
       <text x="80" y="56" class="sub">the agent (LLM)</text>
     </g>
     <path d="M140,300 v40 h503 v-190" class="flow plans" marker-end="url(#pipe-arrow)" />
-    <text x="390" y="358" class="sub">simulate(from_frame, plans): the next pushes to imagine</text>
+    <text x="390" y="358" class="sub">a tool call: the next pushes to imagine</text>
+
+    <!-- step numbers, as in the list under the figure, on each box's top-right corner -->
+    {
+      [
+        [335, 50, "1"],
+        [708, 50, "2"],
+        [880, 210, "3"],
+        [220, 210, "4"],
+      ].map(([x, y, n]) => (
+        <g transform={`translate(${x},${y})`} class="step-num">
+          <circle r="14" />
+          <text y="5">{n}</text>
+        </g>
+      ))
+    }
   </svg>
   </div>
   <figcaption class="numbered">
     <slot>
-      <span class="key meta"></span> Meta model &nbsp; <span class="key trained"></span> trained during
-      the hackathon. The image goes through V-JEPA 2 once. Imagined pushes stay in latent space: no
-      image is ever generated. The LLM only reads the translator's text.
+      Follow the numbers. Top row, left to right: a picture of the real table goes through
+      V-JEPA 2 <b>(1)</b> once; the predictor <b>(2)</b> then imagines push after push, in latent
+      space, without drawing any image. Bottom row, right to left: the translator <b>(3)</b> turns each
+      imagined latent into a line of text, and Muse Spark <b>(4)</b> reads it and sends back the next
+      pushes to try. <span class="key meta"></span> Meta model &nbsp;
+      <span class="key trained"></span> trained during the hackathon.
     </slot>
   </figcaption>
 </figure>
@@ -159,6 +177,14 @@
   }
   .flow.push {
     stroke: var(--pusher);
+  }
+  .step-num circle {
+    fill: var(--text);
+  }
+  .step-num text {
+    fill: var(--page);
+    font-size: 15px;
+    font-weight: 700;
   }
   .ink-fill {
     fill: var(--muted);

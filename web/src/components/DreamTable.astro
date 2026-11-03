@@ -26,12 +26,13 @@ const ready = worlds.filter(hasDream);
   }
   <div class="stage">
     <canvas role="img" aria-label="A table: drag on it to push; the world model draws what it imagines"></canvas>
-    <button type="button" class="wake" data-wake>Wake the world model</button>
+    <button type="button" class="wake" data-wake>Wake the world model (20 MB)</button>
   </div>
   <p class="caption" data-status aria-live="polite">
-    Runs the predictor and the translator in your browser. Nothing is sent anywhere.
+    Wake it, then drag on the table to push. Runs in your browser; nothing is sent anywhere.
   </p>
   <div class="controls">
+    <button type="button" data-example>▶ Show me a push</button>
     <button type="button" data-back>↺ Back to the start</button>
     <button type="button" data-next>Next start ›</button>
   </div>

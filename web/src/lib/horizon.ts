@@ -51,8 +51,6 @@ function draw(box: HTMLElement, models: Model[], main: string) {
     const d = m.rows.map((r, j) => `${j ? "L" : "M"}${x(r.horizon)},${y(r.within_tolerance)}`).join("");
     el("path", { d, class: `line ${cls}` }, svg);
     for (const r of m.rows) el("circle", { cx: x(r.horizon), cy: y(r.within_tolerance), r: 4, class: `dot ${cls}` }, svg);
-    const last = m.rows[m.rows.length - 1];
-    el("text", { x: x(last.horizon) + 8, y: y(last.within_tolerance), class: "end-label", "dominant-baseline": "middle" }, svg).textContent = m.name;
   });
 
   // hover: snap to the nearest horizon

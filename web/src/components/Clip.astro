@@ -1,20 +1,44 @@
 ---
-// A looping 3D clip (web/public/clips/<name>.mp4, from `jat clip`) with a numbered caption.
+// A looping clip (web/public/clips/<name>.mp4, from `jat clip`) with the agent's words set above
+// it from the clip's subtitles (<name>.vtt), an optional color key, and a numbered caption.
 // Renders nothing until the clip exists.
-import { hasClip } from "../lib/data";
+import { hasClip, hasWords } from "../lib/data";
 
 interface Props {
   name: string;
   label: string;
+  swatches?: { color: string; text: string; round?: boolean; outline?: boolean }[]; // outline: for a light color
 }
-const { name, label } = Astro.props;
+const { name, label, swatches = [] } = Astro.props;
 const BASE = import.meta.env.BASE_URL.replace(/\/?$/, "/");
+const words = hasWords(name);
 ---
 
 {
   hasClip(name) && (
-    <figure class="clip">
-      <video src={`${BASE}clips/${name}.mp4`} autoplay muted loop playsinline aria-label={label} />
+    <figure class="clip" data-clip>
+      {words && (
+        <p class="clip-words" data-words aria-live="off">
+          <span class="who">Muse Spark</span>
+          <span data-said>…</span>
+        </p>
+      )}
+      <video src={`${BASE}clips/${name}.mp4`} autoplay muted loop playsinline aria-label={label}>
+        {words && <track kind="captions" srclang="en" label="The agent's words" src={`${BASE}clips/${name}.vtt`} default />}
+      </video>
+      {swatches.length > 0 && (
+        <ul class="legend clip-key">
+          {swatches.map((k) => (
+            <li>
+              <i
+                class:list={{ round: k.round }}
+                style={`background: ${k.color}` + (k.outline ? "; border: 1px solid var(--muted)" : "")}
+              />
+              {k.text}
+            </li>
+          ))}
+        </ul>
+      )}
       {Astro.slots.has("default") && (
         <figcaption class="numbered">
           <slot />
@@ -23,3 +47,18 @@ const BASE = import.meta.env.BASE_URL.replace(/\/?$/, "/");
     </figure>
   )
 }
+
+<script>
+  // The subtitles drive the words above the video, in the page's own type
+  for (const root of document.querySelectorAll<HTMLElement>("[data-clip]")) {
+    const video = root.querySelector("video")!;
+    const said = root.querySelector<HTMLElement>("[data-said]");
+    const track = video.textTracks[0];
+    if (!said || !track) continue;
+    track.mode = "hidden";
+    track.addEventListener("cuechange", () => {
+      const cue = track.activeCues?.[0] as VTTCue | undefined;
+      if (cue) said.textContent = cue.text;
+    });
+  }
+</script>

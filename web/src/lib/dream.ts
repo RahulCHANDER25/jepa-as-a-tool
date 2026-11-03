@@ -3,7 +3,7 @@
 // visitor draws is imagined by the predictor and read by the translator, both in ONNX.
 
 import { drawScene, fitCanvas, type Ghost } from "./draw";
-import type { Point, State } from "./world";
+import { anchor, isBilliards, TABLE, type Point, type State } from "./world";
 import { onThemeChange } from "./theme";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/?$/, "/");
@@ -88,6 +88,17 @@ function legal(start: Point, end: Point): [Point, Point] {
   return [s, [clamp(s[0] + dx), clamp(s[1] + dy)]];
 }
 
+/** A push that clearly moves things: through the T toward the middle of the table, or the cue
+ * struck through the white ball toward the red one. */
+function examplePush(world: string, state: State): [Point, Point] {
+  const [tx, ty] = isBilliards(world) ? [state[0], state[1]] : anchor(world, state);
+  const [ax, ay] = isBilliards(world) ? [state[2], state[3]] : [TABLE / 2, TABLE / 2];
+  const length = Math.hypot(ax - tx, ay - ty) || 1;
+  const [dx, dy] = [(ax - tx) / length, (ay - ty) / length];
+  const [back, through] = isBilliards(world) ? [70, 30] : [110, 50];
+  return legal([tx - dx * back, ty - dy * back], [tx + dx * through, ty + dy * through]);
+}
+
 export function mountDreams() {
   for (const root of document.querySelectorAll<HTMLElement>("[data-dream]:not([data-mounted])")) {
     root.dataset.mounted = "1";
@@ -126,6 +137,38 @@ function mount(root: HTMLElement) {
     });
   }
 
+  /** Imagines one push from the end of the dream. */
+  async function imagine(push: [Point, Point]) {
+    if (!dreamer) return;
+    busy = true;
+    const started = performance.now();
+    const z = await dreamer.step(chain[chain.length - 1].z, [...push[0], ...push[1]]);
+    const state = await dreamer.read(z);
+    chain.push({ z, state, push });
+    const ms = Math.round(performance.now() - started);
+    status.textContent = `${chain.length - 1} imagined push${chain.length === 2 ? "" : "es"}, the last one in ${ms} ms in your browser. Drag again to continue the dream.`;
+    busy = false;
+    draw();
+  }
+
+  /** Draws the example push as if dragged, then imagines it. */
+  function showExample() {
+    if (!dreamer || busy) return;
+    const push = examplePush(dreamer.manifest.world, chain[chain.length - 1].state);
+    const started = performance.now();
+    busy = true;
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - started) / 700);
+      drag = [push[0], [push[0][0] + (push[1][0] - push[0][0]) * t, push[0][1] + (push[1][1] - push[0][1]) * t]];
+      draw();
+      if (t < 1) return requestAnimationFrame(tick);
+      drag = null;
+      busy = false;
+      imagine(push);
+    };
+    requestAnimationFrame(tick);
+  }
+
   async function reset(i: number) {
     if (!dreamer) return;
     start = (i + dreamer.latents.length) % dreamer.latents.length;
@@ -146,6 +189,7 @@ function mount(root: HTMLElement) {
       dreamer = await loadDreamer(name);
       root.classList.add("awake");
       await reset(0);
+      showExample();
     } catch (error) {
       status.textContent = `Could not load the world model (${(error as Error).message}).`;
       wake.disabled = false;
@@ -172,18 +216,11 @@ function mount(root: HTMLElement) {
     const push = drag;
     drag = null;
     if (Math.hypot(push[1][0] - push[0][0], push[1][1] - push[0][1]) < MIN_LENGTH) return draw();
-    busy = true;
-    const started = performance.now();
-    const z = await dreamer.step(chain[chain.length - 1].z, [...push[0], ...push[1]]);
-    const state = await dreamer.read(z);
-    chain.push({ z, state, push });
-    const ms = Math.round(performance.now() - started);
-    status.textContent = `${chain.length - 1} imagined push${chain.length === 2 ? "" : "es"}, the last one in ${ms} ms in your browser. Drag again to continue the dream.`;
-    busy = false;
-    draw();
+    await imagine(push);
   });
 
   wake.addEventListener("click", () => load(world));
+  $<HTMLButtonElement>("[data-example]").addEventListener("click", showExample);
   $<HTMLButtonElement>("[data-back]").addEventListener("click", () => reset(start));
   $<HTMLButtonElement>("[data-next]").addEventListener("click", () => reset(start + 1));
   root.querySelectorAll<HTMLButtonElement>("[data-world]").forEach((b) =>

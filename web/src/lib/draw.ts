@@ -24,6 +24,7 @@ export interface Scene {
   showLabels?: boolean;
   pusher?: Point;
   realPush?: { start: Point; end: Point };
+  view?: { x: number; y: number; size: number }; // the square of the table to show (default: all)
 }
 
 type Colors = Record<
@@ -85,8 +86,9 @@ export function drawScene(canvas: HTMLCanvasElement, scene: Scene) {
   const ctx = canvas.getContext("2d")!;
   const c = colors(canvas);
   const { world } = scene;
-  const scale = canvas.width / TABLE;
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  const view = scene.view ?? { x: 0, y: 0, size: TABLE };
+  const scale = canvas.width / view.size;
+  ctx.setTransform(scale, 0, 0, scale, -view.x * scale, -view.y * scale);
   ctx.fillStyle = c.table;
   ctx.fillRect(0, 0, TABLE, TABLE);
 

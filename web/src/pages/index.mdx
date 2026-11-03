@@ -1,12 +1,13 @@
 ---
 layout: ../layouts/Article.astro
-title: Imagine before you push
-subtitle: An LLM agent that imagines each push in a V-JEPA 2 world model before it acts, and solves more tasks for it on the tabletop and on PushT.
-description: Muse Spark plans pushes by imagining them first, with a world model built on Meta's V-JEPA 2, in a 2D world, two 3D worlds and a room it never saw.
+title: Imagine before acting
+subtitle: An LLM agent that uses a world model to imagine what its actions will do, before it acts.
+description: Muse Spark imagines its moves first, in a world model built on Meta's V-JEPA 2, then acts. A 2D world, two 3D worlds and a room it never saw.
 authors: ["Rahul Chander"]
 published: November 4, 2026
 links:
   - { label: "Code", href: "https://github.com/RahulCHANDER25/jepa-as-a-tool" }
+  - { label: "Model", href: "https://huggingface.co/racoon25/jepa-as-a-tool" }
 ---
 
 {/*
@@ -17,51 +18,59 @@ links:
   tabletop-new-look) and an episode id from
   web/public/data/episodes/<run>/index.json. A missing run or episode fails the build.
 
-  After a new run: re-export, re-render the clips (`jat clip`), then re-read every sentence marked CHECK.
+  After a new run: re-export, re-render the clips (`jat clip`), then re-read every sentence.
 */}
 
-import EpisodePlayer from "../components/EpisodePlayer.astro";
 import Compare from "../components/Compare.astro";
 import WorldTabs from "../components/WorldTabs.astro";
 import WorldCards from "../components/WorldCards.astro";
-import ImaginationTree from "../components/ImaginationTree.astro";
+import ImagineFan from "../components/ImagineFan.astro";
 import ResultsChart from "../components/ResultsChart.astro";
 import HorizonChart from "../components/HorizonChart.astro";
 import Pipeline from "../components/Pipeline.astro";
 import Stat from "../components/Stat.astro";
 import DreamTable from "../components/DreamTable.astro";
-import Note from "../components/Note.astro";
 import Clip from "../components/Clip.astro";
 
 <p class="lede">
-  On a 3D tabletop, Muse Spark solves <Stat run="tabletop" setting="no_tool" /> of the pushing tasks
-  on its own and <Stat run="tabletop" setting="wm_tool" /> when it can first imagine its pushes in a
-  world model built on V-JEPA 2. Agents that act in the physical world need to ask "what happens if I
-  do this?" before they act; this gives any LLM agent a learned world model to ask.
+  Some actions cannot be taken back. A push sends a block sliding; a cue stroke sends a ball
+  rolling. People play such moves in their head first. What if an AI agent could do the same:
+  try a move in an imagined world, look at what happens, and only then act? We give an LLM agent
+  that imagined world, a world model built on Meta's V-JEPA 2. On a 3D tabletop, Muse Spark
+  solves <Stat run="tabletop" setting="no_tool" /> of the pushing tasks on its own, and
+  <Stat run="tabletop" setting="wm_tool" /> when it can imagine first.
 </p>
 
 <div class="hero">
-  <Clip name="hero" label="The agent imagines several pushes on the 3D tabletop, picks one, then pushes for real">
-    Before each real push, the agent asks the world model what several pushes would do
-    (see-through), keeps one (green), and only then pushes for real (white pusher). The gold
-    outline is the goal; the caption is the agent's own words.
+  <Clip
+    name="hero"
+    label="The agent imagines several pushes on the 3D tabletop, keeps one, then pushes for real"
+    swatches={[
+      { color: "rgb(64, 107, 179)", text: "the real T" },
+      { color: "rgb(242, 191, 38)", text: "the goal" },
+      { color: "rgba(191, 153, 255, 0.7)", text: "imagined pushes" },
+      { color: "rgb(26, 217, 89)", text: "the push it keeps" },
+      { color: "#fff", text: "the real pusher", round: true, outline: true },
+    ]}
+  >
+    One task on the 3D tabletop, as it ran: bring the blue T onto the gold one. Above the video,
+    the agent's own words. In the video, each move has three beats: lavender see-through T's
+    appear, one for each push the agent imagines (the world model's answer); one of them turns
+    green, the push it keeps; then the white pusher makes that push for real. Two moves later
+    the T is on the goal. Alone, the agent fails this task.
   </Clip>
 </div>
 
 ## Introduction
 
-{/* YOUR WORDS: why this matters, in 3 or 4 sentences. LLMs plan in words but cannot run physics
-    in their head; an agent given a world model as a tool can check a move before making it;
-    Qian et al. (ACL 2026) found agents rarely use such a tool; ours uses it on every move. */}
-
 Language models reason well in words, but they cannot run physics in their head. Asked to turn a
 block by pushing it, an LLM guesses where to push and has no way to check the guess before it
-acts. We give it a way to check: a world model, behind one tool call.
+acts. A wrong push cannot be undone; the next one has to start from wherever the block landed.
 
-<Note>
-  Qian et al. (ACL 2026) gave agents a world model as a tool and found they rarely called it. Here
-  the agent imagines dozens of pushes for each real one (see Results).
-</Note>
+We give the agent a way to check: a world model, behind a tool. Before each real push, the agent
+can ask "what if I push here?" as many times as it likes, compare the answers, and keep the best
+one. The world model learned physics from pictures alone; the LLM brings the language and the
+reasoning. Neither is retrained for the other.
 
 Same task, same model. On the left the LLM acts on its own; on the right it can imagine first.
 
@@ -70,74 +79,104 @@ Same task, same model. On the left the LLM acts on its own; on the right it can 
   tries pushes in its imagination first.
 </Compare>
 
+## Related work
+
+- **Planning in a world model.** _World Models_ (Ha & Schmidhuber, 2018) and DreamerV3 (Hafner
+  et al., 2023) train an agent inside a learned model of its world. LeCun (2022) argues that an
+  intelligent agent should plan this way, and V-JEPA 2 (Assran et al., 2025) plans robot-arm
+  moves by searching its own latent space. We keep the learned world model, but the one who
+  searches it is an LLM, in words.
+- **LLMs meet JEPA.** LLM-JEPA (Huang, LeCun & Balestriero, ICLR 2026) adds a JEPA objective to
+  the training of an LLM, so the LLM itself learns better embeddings. We take the other road and
+  change nothing inside the LLM. The physics lives in a separate world model, trained on
+  pictures; the language and the high-level reasoning stay in the LLM. They meet at inference
+  time, through tool calls: the world model is a place to try a move before making it.
+- **LLMs with a simulator.** Mind's Eye (Liu et al., ICLR 2023) answers physics questions by
+  running them in MuJoCo, and RAP (Hao et al., EMNLP 2023) uses the LLM as its own world model
+  to plan. Here the simulator is not written by hand: it is learned from pictures, so the same
+  recipe can apply where no simulator exists.
+- **A world model as a tool.** Qian et al. (ACL 2026) gave agents a world model as a tool and
+  found they rarely called it. Ours calls it constantly: about
+  <Stat run="pusht" setting="wm_tool" value="imagined" /> imagined pushes per PushT task, for
+  <Stat run="pusht" setting="wm_tool" value="pushes" /> real ones.
+
 ## The agent and its world model
 
-Like the agent of _World Models_ (Ha & Schmidhuber, 2018), ours has a part that sees, a part that
-predicts and a part that decides. The difference: the part that decides is an LLM, and it uses the
-other two through a tool, `simulate(from_frame, plans)`. The tool takes candidate push sequences
-and answers with where the objects would end up after each push, as text. Every imagined state
-gets an id (`I1`, `I2`, …), so the agent can continue a promising branch later.
+Like the agent of _World Models_, ours has a part that sees, a part that predicts and a part that
+decides. The difference: the part that decides is an LLM, and it uses the other two through tool
+calls. It sends the pushes it wants to try; it gets back, as text, where the objects would end up.
+It can then try more pushes from any imagined state, to plan several moves ahead.
 
 <Pipeline />
 
-- **See: V-JEPA 2**, Meta's self-supervised video model, turns a picture of the table into a
-  latent: 64 tokens of 1,024 numbers. It stays frozen.
-- **Predict: the predictor**, a small transformer we trained, takes a latent and a push and
-  predicts the next latent. Chains of pushes stay in latent space.
-- **Read: the translator** turns a latent into the state of the table: the T's position and angle,
-  or where each ball is. One shared trunk, one small head per world.
-- **Decide: Muse Spark** reads that text and picks the next plans to imagine, or a push to make.
+1. **See.** V-JEPA 2, Meta's video model, looks at a picture of the table and sums it up as a
+   _latent_: 64 tokens of 1,024 numbers each. We use it as it is, frozen.
+2. **Predict.** Our predictor, a small transformer, takes a latent and a push and predicts the
+   latent after that push. Pushes chain, all in latent space: imagining needs no image at all.
+3. **Read.** Our translator turns any latent, real or imagined, into numbers the LLM can use:
+   where the T is and how it is turned, or where each ball is. One shared trunk, one small head
+   per world.
+4. **Decide.** Muse Spark reads those numbers, then asks to imagine more pushes, or makes a
+   real one.
 
-The world model never saw the physics engine. It learned only from pictures of random pushes. The
-same recipe applies where no simulator exists; here, we can check every imagined frame against the
-true physics.
+The world model never saw the physics engine: it learned only by watching pictures of random
+pushes. The same recipe applies where no simulator exists. Here we do have one, so we can check
+every imagined state against the true physics.
 
 ## Four worlds
 
-The world model is trained on three worlds and tested on a fourth it never saw: the tabletop in
+One world model is trained on three worlds and tested on a fourth it never saw: the tabletop in
 another room.
 
 <WorldCards
   episodes={[
-    { run: "pusht", id: "pose-0-021__wm_tool__s0" },
-    { run: "tabletop", id: "rotate-0-048__wm_tool__s0" },
-    { run: "billiards", id: "shot-0-023__wm_tool__s0" },
-    { run: "tabletop-new-look", id: "rotate-0-001__wm_tool__s0" },
+    { run: "pusht", id: "rotate-0-062__wm_tool__s0" },
+    { run: "tabletop", id: "rotate-0-025__wm_tool__s0" },
+    { run: "billiards", id: "bank-0-091__wm_tool__s0" },
+    { run: "tabletop-new-look", id: "pose-0-038__wm_tool__s0" },
   ]}
 >
-  The four worlds, one episode each: PushT from above, the 3D worlds from a little further back
-  than the camera the world model sees, so the whole table fits.
-  All four share one 512 × 512 px table and the same push action.
+  One task per world, each solved with the world model. PushT is seen from above; the 3D worlds
+  from a little further back than the world model's camera, so the whole table fits. All four
+  share one 512 × 512 px table and the same push action.
 </WorldCards>
+
+## Imagine, pick, push
+
+Here is one move up close. The agent imagines several pushes from the same table, the world
+model answers each one, and the agent keeps one and makes it for real.
+
+<ImagineFan run="pusht" episode="rotate-0-021__wm_tool__s0">
+  A PushT task, move by move. Left: the real table. Right: every push the agent imagined from it,
+  one card each, drawn where the world model says the T would end up, with its distance to the
+  goal. The card it keeps lights up green; then the real pusher makes that push, and you can see
+  how close the imagined T was to the real one.
+</ImagineFan>
 
 ## Watch it think
 
-Step through full episodes. Each _Imagine_ step shows the plans the agent tried; _Choose_ shows
-the plan it keeps; each _Push_ is a real push on the table.
+Whole episodes, playing by themselves. The label under the table says what the agent is doing
+(_Imagine_, _Choose_ or _Push_); the list on the right is everything it said and did. Click a line
+to jump there, or ❚❚ to pause.
 
 <WorldTabs
   wide
+  autoplay
   episodes={[
     { run: "pusht", id: "pose-0-021__wm_tool__s0" },
     { run: "tabletop", id: "rotate-0-090__wm_tool__s0" },
-    { run: "billiards", id: "carom-0-049__wm_tool__s0" },
+    { run: "billiards", id: "carom-0-032__wm_tool__s0" },
   ]}
 >
-  One episode per world, with the agent's own words. Toggle "show the real outcome" to compare each
-  imagined state with what the physics would really do.
+  One episode per world, with the agent's own words. Tick "show the real outcome" to draw, for each
+  imagined state, where the real physics would have put it.
 </WorldTabs>
-
-Every frame of one episode, as a tree. Real frames form the trunk; imagined frames branch off.
-Underlined frames are pushes the agent imagined and then ran for real.
-
-<ImaginationTree run="pusht" episode="rotate-0-030__wm_tool__s0">
-  The imagination tree of a PushT episode. Click a frame to see it on the table.
-</ImaginationTree>
 
 ## Dream with it
 
-Your turn. Drag on the table to push: the world model imagines where things go, in your browser.
-Each push starts from the last imagined one, so you can follow a whole dream.
+Your turn. Wake the world model, then drag on the table to push: the world model imagines where
+things go, in your browser. Each push starts from the last imagined one, so you can follow a whole
+dream. Not sure where to start? _Show me a push_ makes one for you.
 
 <DreamTable>
   Dream mode. V-JEPA 2 is too large for a web page, so each start comes with its latent computed
@@ -147,38 +186,31 @@ Each push starts from the last imagined one, so you can follow a whole dream.
 ## Results
 
 Muse Spark on every world, in three settings: alone, with our world model, and with the real
-physics engine behind the same tool (the best case for the tool). Every setting plays the same
-tasks.
+physics engine behind the same tool (a perfect world model: the best case). Every setting plays
+the same tasks.
 
 <ResultsChart runs={["pusht", "tabletop", "billiards"]} />
 
-- **The tool works.** With the real physics behind it, the agent solves
+- **The agent knows how to use the tool.** With the real physics behind it, it solves
   <Stat run="pusht" setting="oracle_tool" /> of the PushT tasks,
   <Stat run="tabletop" setting="oracle_tool" /> of the tabletop tasks and
   <Stat run="billiards" setting="oracle_tool" /> of the billiards tasks, against
   <Stat run="pusht" setting="no_tool" />, <Stat run="tabletop" setting="no_tool" /> and
-  <Stat run="billiards" setting="no_tool" /> alone.
-- **The world model helps on the tabletop and on PushT.** On the tabletop the agent solves
-  <Stat run="tabletop" setting="wm_tool" /> with the world model against
+  <Stat run="billiards" setting="no_tool" /> alone. Imagining first works.
+- **Our world model helps on the tabletop and on PushT.** On the tabletop the agent solves
+  <Stat run="tabletop" setting="wm_tool" /> with it against
   <Stat run="tabletop" setting="no_tool" /> alone: on the same tasks it wins
-  <Stat run="tabletop" setting="wm_tool" value="won" /> that it loses alone and loses
+  <Stat run="tabletop" setting="wm_tool" value="won" /> that it loses alone, and loses
   <Stat run="tabletop" setting="wm_tool" value="lost" /> that it wins alone
   (<Stat run="tabletop" setting="wm_tool" value="p" />). On PushT:
-  <Stat run="pusht" setting="wm_tool" /> against <Stat run="pusht" setting="no_tool" />, won
-  <Stat run="pusht" setting="wm_tool" value="won" />, lost
-  <Stat run="pusht" setting="wm_tool" value="lost" />
-  (<Stat run="pusht" setting="wm_tool" value="p" />).
-- **On billiards it does not help yet:** <Stat run="billiards" setting="wm_tool" /> with the world
-  model against <Stat run="billiards" setting="no_tool" /> alone, won
-  <Stat run="billiards" setting="wm_tool" value="won" />, lost
-  <Stat run="billiards" setting="wm_tool" value="lost" />
-  (<Stat run="billiards" setting="wm_tool" value="p" />). With the real physics behind the
-  same tool it solves <Stat run="billiards" setting="oracle_tool" />, so the gap is in the world
-  model, not in the agent.
-- **It uses the tool heavily:** about <Stat run="pusht" setting="wm_tool" value="imagined" />
-  imagined pushes per PushT task, for <Stat run="pusht" setting="wm_tool" value="pushes" /> real
-  ones. The price is tokens: <Stat run="pusht" setting="wm_tool" value="tokens" /> per task with the
-  world model, against <Stat run="pusht" setting="no_tool" value="tokens" /> alone.
+  <Stat run="pusht" setting="wm_tool" /> against <Stat run="pusht" setting="no_tool" />.
+- **Billiards is the hard one.** Balls roll fast, collide and bounce, and the world model is off
+  by about three times more than on the tabletop (next chart). There it brings no clear gain yet:
+  <Stat run="billiards" setting="wm_tool" /> against <Stat run="billiards" setting="no_tool" />
+  (<Stat run="billiards" setting="wm_tool" value="p" />), while the real physics reaches
+  <Stat run="billiards" setting="oracle_tool" />. The gap is in the world model, not in the agent.
+- **The price is tokens:** <Stat run="pusht" setting="wm_tool" value="tokens" /> per PushT task
+  with the world model, against <Stat run="pusht" setting="no_tool" value="tokens" /> alone.
 
 Per task family on PushT:
 
@@ -189,84 +221,58 @@ Per task family on PushT:
   (<Stat run="pusht" setting="wm_tool" family="rotate" value="p" />).
 </ResultsChart>
 
-## How far ahead can it imagine?
+## The better it imagines, the more it helps
 
-The longer the chain of imagined pushes, the more the errors add up.
+How far off is the world model? The longer the chain of imagined pushes, the more its errors add
+up. On PushT and the tabletop it stays within a few pixels; on billiards, much less so.
 
-<HorizonChart worlds={["pusht", "tabletop", "billiards"]} />
+<HorizonChart worlds={["pusht", "tabletop", "billiards", "tabletop-new-look"]} />
 
-## A wrong world model is worse than none
-
-{/* YOUR WORDS: what the new room shows. The physics are the same; only the picture changed. The
-    world model reads a scene it never saw, tells the agent confident wrong positions, and the
-    agent trusts them. Compare with World Models' "cheating the world model". */}
-
-The fourth world has the tabletop's physics but a new look: another table, another light, another
-color and the camera moved. The world model never saw it. Alone, the agent solves
-<Stat run="tabletop-new-look" setting="no_tool" /> of the tasks there; with the world model, only
-<Stat run="tabletop-new-look" setting="wm_tool" />. The agent trusts what the tool tells it, and the
-tool reads a scene it does not know.
+Put next to the results, this gives one simple rule: where the world model is accurate, the agent
+gains; where it is not, the agent gains nothing, and can even be misled. The clearest case is the
+fourth world. It has the tabletop's physics, but a new look: another table, another light,
+another color, and the camera moved. The world model never saw it, and it already misreads the
+picture before any imagined push. Alone, the agent solves
+<Stat run="tabletop-new-look" setting="no_tool" /> of the tasks there; with the world model,
+<Stat run="tabletop-new-look" setting="wm_tool" />. It trusts what the tool tells it.
 
 <ResultsChart runs={["tabletop", "tabletop-new-look"]}>
   The same physics, two looks. On the look it was trained on, the world model helps; in the new
   room it misleads the agent.
 </ResultsChart>
 
-<HorizonChart worlds={["tabletop", "tabletop-new-look"]}>
-  Already at 0 imagined pushes, the translator misreads the new room: the errors start before any
-  imagination.
-</HorizonChart>
-
-<Compare run="tabletop-new-look" task="pose-0-056">
-  A new-room task the agent solves alone and fails with the world model.
-</Compare>
-
-## Lab notebook
-
-Three things that broke on the way, and what they taught us.
-
-- **Balls flying off the table.** At a 4 ms physics step, a contact between two balls lasted
-  only two steps, and a ball gained energy at each bounce, until it left the table: a quarter of
-  the random pushes. The step is now 2 ms, and the cue withdraws 20 ms after it touches a ball so
-  it never pins a ball into a cushion.
-- **The EGL crash.** Rendering the 3D worlds on a GPU through EGL failed in two ways on Kaggle:
-  with one GPU visible, EGL numbers it 0 whatever its physical index, and an EGL context can only
-  be current on one thread at a time, so parallel evaluation workers failed with
-  `EGL_BAD_ACCESS`. Every frame is now drawn on one GL thread.
-- **Carom tasks that could not be found.** After the cue strike was shortened, a strike carried
-  the white ball about 80 px, so from a random start it almost never moved the red one, and the
-  task generator ran out of tries. Carom tasks now start with the two balls close together.
+This is the most useful result of the project, because it says exactly what to improve. The agent
+side is ready: with a perfect world model it solves almost every task. What limits it is how well
+the world model imagines, and a world model gets better with more and more varied data.
 
 ## Limits
 
-- **Errors add up over a chain.** The accuracy chart above shows it in every world. The agent
-  sometimes notices: _"The last result was weaker than predicted, so I'll try longer pushes to cover
-  the distance."_ Here it still runs out of pushes, on a task it solves alone.
-
-<EpisodePlayer run="pusht" episode="pose-0-071__wm_tool__s0">
-  A PushT task where the predictions drift and the agent runs out of pushes.
-</EpisodePlayer>
-
+- **Errors add up over a chain.** Plans of three or four pushes drift, and the agent sometimes
+  runs out of pushes on a task it solves alone.
 - **Near misses.** When an imagined push slides past the T without touching it, the world model
   still moves the T by about 10 px. It saw many clear misses in training, but few pushes that
   graze the T, and those are exactly what a careful agent tries.
-- **A new look breaks it** (see above): the translator needs to have seen the scene.
+- **A new look breaks it** (above): the translator needs to have seen the scene.
 
-## Next
+## What comes next
 
-{/* YOUR WORDS: where this goes. Soft tokens; real camera images, where V-JEPA 2 is at home;
-    any agent through the MCP server. */}
-
-- **Soft tokens.** Today the LLM reads the world model through words. The next step is to give it
-  the latent directly, as tokens it learns to read, instead of a translated state.
+- **More worlds and more looks.** Train the world model on many rooms, tables and lights, so a
+  new room is no longer new.
 - **Real cameras.** The world model learns from pictures alone, so the same recipe applies to a
   real table filmed by a camera, where V-JEPA 2 was trained.
-- **Any agent.** The tool is also served over MCP (`jat mcp`), so other agents can call it.
+- **Soft tokens.** Today the LLM reads the world model through words. Next, give it the latent
+  directly, as tokens it learns to read.
+- **Any agent.** The world model is public on
+  [Hugging Face](https://huggingface.co/racoon25/jepa-as-a-tool), and served over MCP
+  (`jat mcp`), so any agent can imagine before it acts.
+
+An LLM brings the words and the reasoning; a world model brings the physics. Put together, the
+agent does what people do before a move that cannot be undone: it imagines first.
 
 ## Built during the hackathon
 
 Everything in the repository was written between Oct 27 and Nov 4, 2026: the push action on top of
-`gym-pusht`, the three MuJoCo worlds, the tasks, the `simulate` tool and agent loop, the data
+`gym-pusht`, the three MuJoCo worlds, the tasks, the world-model tool and agent loop, the data
 generator, the V-JEPA 2 encoding, the predictor and translator, the evaluation, the MCP server and
 this site. Meta models used: V-JEPA 2 (ViT-L) as the frozen encoder, and Muse Spark as the agent,
 through the Meta Model API.
@@ -289,7 +295,7 @@ physics, in all four worlds.
 
 ```bibtex
 @misc{chander2026imagine,
-  title  = {Imagine before you push: an LLM agent with a V-JEPA 2 world model as a tool},
+  title  = {Imagine before acting: an LLM agent with a V-JEPA 2 world model as a tool},
   author = {Chander, Rahul},
   year   = {2026},
   url    = {https://github.com/RahulCHANDER25/jepa-as-a-tool}
@@ -300,8 +306,13 @@ physics, in all four worlds.
 
 <ol class="references">
   <li>D. Ha and J. Schmidhuber. <a href="https://worldmodels.github.io">World Models</a>. 2018. arXiv:1803.10122.</li>
-  <li>M. Assran et al. V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning. 2025. arXiv:2506.09985.</li>
-  <li>Qian et al. Current Agents Fail to Leverage World Model as Tool for Foresight. ACL 2026. arXiv:2601.03905.</li>
+  <li>D. Hafner, J. Pasukonis, J. Ba and T. Lillicrap. <a href="https://arxiv.org/abs/2301.04104">Mastering Diverse Domains through World Models</a> (DreamerV3). 2023. arXiv:2301.04104.</li>
+  <li>Y. LeCun. <a href="https://openreview.net/forum?id=BZ5a1r-kVsf">A Path Towards Autonomous Machine Intelligence</a>. 2022.</li>
+  <li>M. Assran et al. <a href="https://arxiv.org/abs/2506.09985">V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning</a>. 2025. arXiv:2506.09985.</li>
+  <li>H. Huang, Y. LeCun and R. Balestriero. <a href="https://arxiv.org/abs/2509.14252">LLM-JEPA: Large Language Models Meet Joint Embedding Predictive Architectures</a>. ICLR 2026. arXiv:2509.14252.</li>
+  <li>R. Liu et al. <a href="https://arxiv.org/abs/2210.05359">Mind's Eye: Grounded Language Model Reasoning through Simulation</a>. ICLR 2023. arXiv:2210.05359.</li>
+  <li>S. Hao et al. <a href="https://arxiv.org/abs/2305.14992">Reasoning with Language Model is Planning with World Model</a> (RAP). EMNLP 2023. arXiv:2305.14992.</li>
+  <li>Qian et al. <a href="https://arxiv.org/abs/2601.03905">Current Agents Fail to Leverage World Model as Tool for Foresight</a>. ACL 2026. arXiv:2601.03905.</li>
   <li>C. Chi et al. Diffusion Policy: Visuomotor Policy Learning via Action Diffusion. RSS 2023 (the PushT task).</li>
   <li>E. Todorov, T. Erez and Y. Tassa. MuJoCo: A physics engine for model-based control. IROS 2012.</li>
 </ol>
